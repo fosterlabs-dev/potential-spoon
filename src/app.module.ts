@@ -4,6 +4,7 @@ import { AirtableModule } from './airtable/airtable.module';
 import { AvailabilityModule } from './availability/availability.module';
 import { LoggerModule } from './logger/logger.module';
 import { PricingModule } from './pricing/pricing.module';
+import { TemplatesModule } from './templates/templates.module';
 
 @Module({
   imports: [
@@ -12,6 +13,7 @@ import { PricingModule } from './pricing/pricing.module';
     AirtableModule,
     AvailabilityModule,
     PricingModule,
+    TemplatesModule,
   ],
 })
 export class AppModule {}
