@@ -6,6 +6,7 @@ import { LoggerModule } from './logger/logger.module';
 import { ParserModule } from './parser/parser.module';
 import { PricingModule } from './pricing/pricing.module';
 import { TemplatesModule } from './templates/templates.module';
+import { WhatsappModule } from './whatsapp/whatsapp.module';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { TemplatesModule } from './templates/templates.module';
     PricingModule,
     TemplatesModule,
     ParserModule,
+    WhatsappModule,
   ],
 })
 export class AppModule {}
