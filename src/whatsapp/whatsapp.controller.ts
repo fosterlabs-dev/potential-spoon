@@ -13,6 +13,7 @@ import { ConfigService } from '@nestjs/config';
 import * as crypto from 'crypto';
 import type { Request } from 'express';
 import { LoggerService } from '../logger/logger.service';
+import { MessageHandlerService } from '../orchestrator/message-handler.service';
 
 type IncomingMessage = { from: string; text: string; id?: string };
 
@@ -38,6 +39,7 @@ export class WhatsappController {
   constructor(
     private readonly config: ConfigService,
     private readonly logger: LoggerService,
+    private readonly handler: MessageHandlerService,
   ) {}
 
   @Get()
@@ -78,7 +80,14 @@ export class WhatsappController {
         text: m.text,
         id: m.id,
       });
-      // TODO (step 10): hand off to MessageHandler orchestrator
+      try {
+        await this.handler.handle({ from: m.from, text: m.text });
+      } catch (err) {
+        this.logger.error('whatsapp', 'handler threw; swallowed to keep 200', {
+          from: m.from,
+          error: (err as Error).message,
+        });
+      }
     }
 
     return { status: 'ok' };

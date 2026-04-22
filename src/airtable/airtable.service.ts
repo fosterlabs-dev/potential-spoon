@@ -62,4 +62,38 @@ export class AirtableService {
       throw err;
     }
   }
+
+  async create<T extends FieldSet>(
+    table: string,
+    fields: T,
+  ): Promise<AirtableRecord<T>> {
+    try {
+      const record = await this.base<T>(table).create(fields);
+      return { id: record.id, fields: record.fields };
+    } catch (err) {
+      this.logger.error('airtable', 'create failed', {
+        table,
+        error: (err as Error).message,
+      });
+      throw err;
+    }
+  }
+
+  async update<T extends FieldSet>(
+    table: string,
+    id: string,
+    fields: Partial<T>,
+  ): Promise<AirtableRecord<T>> {
+    try {
+      const record = await this.base<T>(table).update(id, fields);
+      return { id: record.id, fields: record.fields };
+    } catch (err) {
+      this.logger.error('airtable', 'update failed', {
+        table,
+        id,
+        error: (err as Error).message,
+      });
+      throw err;
+    }
+  }
 }

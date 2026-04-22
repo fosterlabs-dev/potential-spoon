@@ -1,11 +1,15 @@
 import axios from 'axios';
 import { ConfigService } from '@nestjs/config';
+import { ConversationService } from '../conversation/conversation.service';
 import { LoggerService } from '../logger/logger.service';
 import { WhatsappService } from './whatsapp.service';
 
 jest.mock('axios');
 
 const mockedAxios = axios as jest.Mocked<typeof axios>;
+
+const makeConversation = (canSend = true): ConversationService =>
+  ({ canSendBot: jest.fn().mockResolvedValue(canSend) }) as unknown as ConversationService;
 
 const makeConfig = (
   overrides: Record<string, string | undefined> = {},
@@ -39,6 +43,7 @@ describe('WhatsappService.sendMessage', () => {
         new WhatsappService(
           makeConfig({ WHATSAPP_PHONE_NUMBER_ID: undefined }),
           makeLogger(),
+          makeConversation(),
         ),
     ).toThrow();
     expect(
@@ -46,13 +51,14 @@ describe('WhatsappService.sendMessage', () => {
         new WhatsappService(
           makeConfig({ WHATSAPP_ACCESS_TOKEN: undefined }),
           makeLogger(),
+          makeConversation(),
         ),
     ).toThrow();
   });
 
   it('POSTs to the WhatsApp Graph API with the right payload and auth', async () => {
     mockedAxios.post.mockResolvedValue({ data: { messages: [{ id: 'wamid.1' }] } });
-    const service = new WhatsappService(makeConfig(), makeLogger());
+    const service = new WhatsappService(makeConfig(), makeLogger(), makeConversation());
 
     await service.sendMessage('628123456789', 'hello');
 
@@ -75,7 +81,7 @@ describe('WhatsappService.sendMessage', () => {
   it('logs every send at info with to + id', async () => {
     mockedAxios.post.mockResolvedValue({ data: { messages: [{ id: 'wamid.abc' }] } });
     const logger = makeLogger();
-    const service = new WhatsappService(makeConfig(), logger);
+    const service = new WhatsappService(makeConfig(), logger, makeConversation());
 
     await service.sendMessage('628', 'hi');
 
@@ -99,7 +105,7 @@ describe('WhatsappService.sendMessage', () => {
       return 0 as unknown as NodeJS.Timeout;
     }) as unknown as typeof setTimeout);
     const logger = makeLogger();
-    const service = new WhatsappService(makeConfig(), logger);
+    const service = new WhatsappService(makeConfig(), logger, makeConversation());
 
     await service.sendMessage('628', 'hi');
 
@@ -118,7 +124,7 @@ describe('WhatsappService.sendMessage', () => {
     });
     mockedAxios.post.mockRejectedValue(err);
     const logger = makeLogger();
-    const service = new WhatsappService(makeConfig(), logger);
+    const service = new WhatsappService(makeConfig(), logger, makeConversation());
 
     await expect(service.sendMessage('628', 'hi')).rejects.toThrow('bad token');
     expect(logger.error).toHaveBeenCalledWith(
@@ -126,5 +132,36 @@ describe('WhatsappService.sendMessage', () => {
       expect.stringContaining('send failed'),
       expect.objectContaining({ to: '628', status: 401 }),
     );
+  });
+
+  it('skips the send when the conversation is not in bot mode', async () => {
+    const logger = makeLogger();
+    const service = new WhatsappService(
+      makeConfig(),
+      logger,
+      makeConversation(false),
+    );
+
+    await service.sendMessage('628', 'hi');
+
+    expect(mockedAxios.post).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledWith(
+      'whatsapp',
+      expect.stringContaining('skipped'),
+      expect.objectContaining({ to: '628' }),
+    );
+  });
+
+  it('bypasses the pause check when override=true', async () => {
+    mockedAxios.post.mockResolvedValue({ data: { messages: [{ id: 'x' }] } });
+    const service = new WhatsappService(
+      makeConfig(),
+      makeLogger(),
+      makeConversation(false),
+    );
+
+    await service.sendMessage('628', 'hi', { override: true });
+
+    expect(mockedAxios.post).toHaveBeenCalled();
   });
 });

@@ -1,10 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios, { AxiosError } from 'axios';
+import { ConversationService } from '../conversation/conversation.service';
 import { LoggerService } from '../logger/logger.service';
 
 const GRAPH_API_BASE = 'https://graph.facebook.com/v20.0';
 const RETRY_DELAY_MS = 500;
+
+export type SendOptions = { override?: boolean };
 
 @Injectable()
 export class WhatsappService {
@@ -14,6 +17,7 @@ export class WhatsappService {
   constructor(
     config: ConfigService,
     private readonly logger: LoggerService,
+    private readonly conversation: ConversationService,
   ) {
     const phoneId = config.get<string>('WHATSAPP_PHONE_NUMBER_ID');
     const token = config.get<string>('WHATSAPP_ACCESS_TOKEN');
@@ -26,7 +30,18 @@ export class WhatsappService {
     this.accessToken = token;
   }
 
-  async sendMessage(to: string, text: string): Promise<void> {
+  async sendMessage(
+    to: string,
+    text: string,
+    options: SendOptions = {},
+  ): Promise<void> {
+    if (!options.override && !(await this.conversation.canSendBot(to))) {
+      this.logger.warn('whatsapp', 'skipped send: conversation not in bot mode', {
+        to,
+      });
+      return;
+    }
+
     const payload = {
       messaging_product: 'whatsapp',
       to,

@@ -84,14 +84,14 @@ describe('ParserService', () => {
     );
   });
 
-  it('returns unknown intent with nulls when Claude output lacks required fields', async () => {
+  it('returns intent with null date/guest fields when Claude omits them', async () => {
     mockCreate.mockResolvedValue(claudeResponse({ intent: 'availability_check' }));
     const service = new ParserService(makeConfig(), makeLogger());
 
-    const out = await service.parse('garbled');
+    const out = await service.parse('vague');
 
     expect(out).toEqual({
-      intent: 'unknown',
+      intent: 'availability_check',
       checkIn: null,
       checkOut: null,
       guests: null,
@@ -126,6 +126,43 @@ describe('ParserService', () => {
       expect.stringContaining('Claude'),
       expect.objectContaining({ error: '429 rate limited' }),
     );
+  });
+
+  it('parses JSON wrapped in markdown code fences', async () => {
+    mockCreate.mockResolvedValue({
+      content: [
+        {
+          type: 'text',
+          text: '```json\n{\n  "intent": "greeting",\n  "checkIn": null,\n  "checkOut": null,\n  "guests": null\n}\n```',
+        },
+      ],
+    });
+    const service = new ParserService(makeConfig(), makeLogger());
+
+    const out = await service.parse('hi');
+
+    expect(out).toEqual({
+      intent: 'greeting',
+      checkIn: null,
+      checkOut: null,
+      guests: null,
+    });
+  });
+
+  it('parses JSON embedded in surrounding prose', async () => {
+    mockCreate.mockResolvedValue({
+      content: [
+        {
+          type: 'text',
+          text: 'Here is the result:\n{"intent":"greeting","checkIn":null,"checkOut":null,"guests":null}\nLet me know if you need more.',
+        },
+      ],
+    });
+    const service = new ParserService(makeConfig(), makeLogger());
+
+    const out = await service.parse('hi');
+
+    expect(out.intent).toBe('greeting');
   });
 
   it('accepts partial date info (check-in only) without erroring', async () => {

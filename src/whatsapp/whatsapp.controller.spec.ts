@@ -3,7 +3,11 @@ import { ForbiddenException } from '@nestjs/common';
 import * as crypto from 'crypto';
 import type { Request } from 'express';
 import { LoggerService } from '../logger/logger.service';
+import { MessageHandlerService } from '../orchestrator/message-handler.service';
 import { WhatsappController } from './whatsapp.controller';
+
+const makeHandler = (): MessageHandlerService =>
+  ({ handle: jest.fn().mockResolvedValue(undefined) }) as unknown as MessageHandlerService;
 
 const APP_SECRET = 'test-app-secret';
 const VERIFY_TOKEN = 'test-verify-token';
@@ -62,7 +66,7 @@ const samplePayload = {
 
 describe('WhatsappController (verification)', () => {
   it('returns the challenge when token and mode match', () => {
-    const ctrl = new WhatsappController(makeConfig(), makeLogger());
+    const ctrl = new WhatsappController(makeConfig(), makeLogger(), makeHandler());
 
     const out = ctrl.verify('subscribe', VERIFY_TOKEN, 'challenge-123');
 
@@ -70,7 +74,7 @@ describe('WhatsappController (verification)', () => {
   });
 
   it('throws Forbidden when the verify token is wrong', () => {
-    const ctrl = new WhatsappController(makeConfig(), makeLogger());
+    const ctrl = new WhatsappController(makeConfig(), makeLogger(), makeHandler());
 
     expect(() => ctrl.verify('subscribe', 'wrong', 'c')).toThrow(
       ForbiddenException,
@@ -78,7 +82,7 @@ describe('WhatsappController (verification)', () => {
   });
 
   it('throws Forbidden when the mode is not "subscribe"', () => {
-    const ctrl = new WhatsappController(makeConfig(), makeLogger());
+    const ctrl = new WhatsappController(makeConfig(), makeLogger(), makeHandler());
 
     expect(() => ctrl.verify('unsubscribe', VERIFY_TOKEN, 'c')).toThrow(
       ForbiddenException,
@@ -90,7 +94,7 @@ describe('WhatsappController (incoming POST)', () => {
   it('accepts a valid signature, logs the incoming message, and returns ok', async () => {
     const raw = Buffer.from(JSON.stringify(samplePayload));
     const logger = makeLogger();
-    const ctrl = new WhatsappController(makeConfig(), logger);
+    const ctrl = new WhatsappController(makeConfig(), logger, makeHandler());
 
     const out = await ctrl.receive(asReq(raw), sign(raw), samplePayload);
 
@@ -105,7 +109,7 @@ describe('WhatsappController (incoming POST)', () => {
   it('returns ok but warns and drops when the signature is invalid', async () => {
     const raw = Buffer.from(JSON.stringify(samplePayload));
     const logger = makeLogger();
-    const ctrl = new WhatsappController(makeConfig(), logger);
+    const ctrl = new WhatsappController(makeConfig(), logger, makeHandler());
 
     const bogus = sign(raw, 'different-secret');
     const out = await ctrl.receive(asReq(raw), bogus, samplePayload);
@@ -122,7 +126,7 @@ describe('WhatsappController (incoming POST)', () => {
   it('returns ok but warns when the signature header is missing', async () => {
     const raw = Buffer.from(JSON.stringify(samplePayload));
     const logger = makeLogger();
-    const ctrl = new WhatsappController(makeConfig(), logger);
+    const ctrl = new WhatsappController(makeConfig(), logger, makeHandler());
 
     const out = await ctrl.receive(asReq(raw), undefined, samplePayload);
 
@@ -132,7 +136,7 @@ describe('WhatsappController (incoming POST)', () => {
 
   it('returns ok and warns when rawBody is missing (parser misconfigured)', async () => {
     const logger = makeLogger();
-    const ctrl = new WhatsappController(makeConfig(), logger);
+    const ctrl = new WhatsappController(makeConfig(), logger, makeHandler());
 
     const out = await ctrl.receive(asReq(undefined), 'sha256=deadbeef', samplePayload);
 
@@ -143,7 +147,7 @@ describe('WhatsappController (incoming POST)', () => {
   it('does not crash on signatures of unexpected length', async () => {
     const raw = Buffer.from(JSON.stringify(samplePayload));
     const logger = makeLogger();
-    const ctrl = new WhatsappController(makeConfig(), logger);
+    const ctrl = new WhatsappController(makeConfig(), logger, makeHandler());
 
     const out = await ctrl.receive(asReq(raw), 'sha256=short', samplePayload);
 
@@ -163,7 +167,7 @@ describe('WhatsappController (incoming POST)', () => {
     };
     const raw = Buffer.from(JSON.stringify(statusOnly));
     const logger = makeLogger();
-    const ctrl = new WhatsappController(makeConfig(), logger);
+    const ctrl = new WhatsappController(makeConfig(), logger, makeHandler());
 
     const out = await ctrl.receive(asReq(raw), sign(raw), statusOnly);
 

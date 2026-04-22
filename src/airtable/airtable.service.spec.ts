@@ -4,8 +4,15 @@ import { LoggerService } from '../logger/logger.service';
 
 const mockAll = jest.fn();
 const mockFind = jest.fn();
+const mockCreate = jest.fn();
+const mockUpdate = jest.fn();
 const mockSelect = jest.fn(() => ({ all: mockAll }));
-const mockTable = jest.fn(() => ({ select: mockSelect, find: mockFind }));
+const mockTable = jest.fn(() => ({
+  select: mockSelect,
+  find: mockFind,
+  create: mockCreate,
+  update: mockUpdate,
+}));
 const mockBase = jest.fn(() => mockTable);
 
 jest.mock('airtable', () =>
@@ -134,6 +141,62 @@ describe('AirtableService', () => {
       'airtable',
       expect.stringContaining('find'),
       expect.objectContaining({ table: 'Pricing', id: 'recX' }),
+    );
+  });
+
+  it('creates a record and returns id + fields', async () => {
+    mockCreate.mockResolvedValue({
+      id: 'recNew',
+      fields: { phone: '62812', status: 'bot' },
+    });
+    const service = new AirtableService(makeConfig(), makeLogger());
+
+    const row = await service.create('Conversations', {
+      phone: '62812',
+      status: 'bot',
+    });
+
+    expect(mockTable).toHaveBeenCalledWith('Conversations');
+    expect(mockCreate).toHaveBeenCalledWith({
+      phone: '62812',
+      status: 'bot',
+    });
+    expect(row).toEqual({
+      id: 'recNew',
+      fields: { phone: '62812', status: 'bot' },
+    });
+  });
+
+  it('updates a record by id and returns id + fields', async () => {
+    mockUpdate.mockResolvedValue({
+      id: 'rec1',
+      fields: { phone: '62812', status: 'paused' },
+    });
+    const service = new AirtableService(makeConfig(), makeLogger());
+
+    const row = await service.update('Conversations', 'rec1', {
+      status: 'paused',
+    });
+
+    expect(mockUpdate).toHaveBeenCalledWith('rec1', { status: 'paused' });
+    expect(row).toEqual({
+      id: 'rec1',
+      fields: { phone: '62812', status: 'paused' },
+    });
+  });
+
+  it('logs and rethrows on create errors', async () => {
+    mockCreate.mockRejectedValue(new Error('boom'));
+    const logger = makeLogger();
+    const service = new AirtableService(makeConfig(), logger);
+
+    await expect(service.create('Conversations', { phone: 'x' })).rejects.toThrow(
+      'boom',
+    );
+    expect(logger.error).toHaveBeenCalledWith(
+      'airtable',
+      expect.stringContaining('create'),
+      expect.objectContaining({ table: 'Conversations' }),
     );
   });
 });

@@ -85,9 +85,10 @@ export class ParserService {
   }
 
   private coerce(raw: string, originalMessage: string): ParseResult {
+    const candidate = this.extractJson(raw);
     let parsed: unknown;
     try {
-      parsed = JSON.parse(raw);
+      parsed = JSON.parse(candidate);
     } catch {
       this.logger.warn('parser', 'Claude returned non-JSON output', {
         raw,
@@ -107,10 +108,6 @@ export class ParserService {
     const checkOut = this.toDate(p.checkOut);
     const guests = typeof p.guests === 'number' ? p.guests : null;
 
-    if (intent !== 'unknown' && !checkIn && !checkOut && guests === null) {
-      return UNKNOWN;
-    }
-
     return { intent, checkIn, checkOut, guests };
   }
 
@@ -118,5 +115,12 @@ export class ParserService {
     if (typeof value !== 'string') return null;
     const d = new Date(value);
     return Number.isNaN(d.getTime()) ? null : d;
+  }
+
+  private extractJson(raw: string): string {
+    const fenced = raw.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
+    if (fenced) return fenced[1].trim();
+    const braced = raw.match(/\{[\s\S]*\}/);
+    return braced ? braced[0] : raw;
   }
 }
