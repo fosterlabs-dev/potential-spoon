@@ -74,6 +74,70 @@ describe('ConversationService.getStatus', () => {
   });
 });
 
+describe('ConversationService.getState', () => {
+  it('returns defaults when there is no row', async () => {
+    const service = new ConversationService(makeAirtable(), makeLogger());
+
+    const state = await service.getState('62812');
+
+    expect(state).toEqual({
+      status: 'bot',
+      lastIntent: null,
+      pendingDates: null,
+      customerName: null,
+    });
+  });
+
+  it('reads lastIntent, pendingDates (JSON), and customerName', async () => {
+    const pending = JSON.stringify({
+      checkIn: '2026-06-15',
+      checkOut: null,
+      guests: 2,
+    });
+    const airtable = makeAirtable({
+      list: jest.fn().mockResolvedValue([
+        {
+          id: 'r',
+          fields: {
+            phone: '62812',
+            status: 'bot',
+            last_intent: 'availability_inquiry',
+            pending_dates: pending,
+            customer_name: 'Maria',
+          },
+        },
+      ]),
+    });
+    const service = new ConversationService(airtable, makeLogger());
+
+    const state = await service.getState('62812');
+
+    expect(state.status).toBe('bot');
+    expect(state.lastIntent).toBe('availability_inquiry');
+    expect(state.pendingDates).toEqual({
+      checkIn: '2026-06-15',
+      checkOut: null,
+      guests: 2,
+    });
+    expect(state.customerName).toBe('Maria');
+  });
+
+  it('gracefully handles malformed pending_dates JSON', async () => {
+    const logger = makeLogger();
+    const airtable = makeAirtable({
+      list: jest.fn().mockResolvedValue([
+        { id: 'r', fields: { phone: '62812', pending_dates: 'not-json' } },
+      ]),
+    });
+    const service = new ConversationService(airtable, logger);
+
+    const state = await service.getState('62812');
+
+    expect(state.pendingDates).toBeNull();
+    expect(logger.warn).toHaveBeenCalled();
+  });
+});
+
 describe('ConversationService.canSendBot', () => {
   it('allows sends when status is bot', async () => {
     const service = new ConversationService(makeAirtable(), makeLogger());
@@ -148,26 +212,93 @@ describe('ConversationService.setStatus', () => {
   });
 });
 
+describe('ConversationService.updateContext', () => {
+  it('stores pendingDates as JSON and customerName/lastIntent as given', async () => {
+    const airtable = makeAirtable();
+    const service = new ConversationService(airtable, makeLogger());
+
+    await service.updateContext('62812', {
+      lastIntent: 'availability_inquiry',
+      pendingDates: { checkIn: '2026-06-15', checkOut: null, guests: 2 },
+      customerName: 'Maria',
+    });
+
+    expect(airtable.create).toHaveBeenCalledWith(
+      'Conversations',
+      expect.objectContaining({
+        phone: '62812',
+        last_intent: 'availability_inquiry',
+        pending_dates: expect.stringContaining('2026-06-15'),
+        customer_name: 'Maria',
+      }),
+    );
+  });
+
+  it('clears pendingDates when passed null', async () => {
+    const airtable = makeAirtable({
+      list: jest.fn().mockResolvedValue([
+        { id: 'r1', fields: { phone: '62812', pending_dates: 'old' } },
+      ]),
+    });
+    const service = new ConversationService(airtable, makeLogger());
+
+    await service.updateContext('62812', { pendingDates: null });
+
+    expect(airtable.update).toHaveBeenCalledWith(
+      'Conversations',
+      'r1',
+      expect.objectContaining({ pending_dates: '' }),
+    );
+  });
+});
+
 describe('ConversationService.parseCommand', () => {
   const service = new ConversationService(makeAirtable(), makeLogger());
 
-  it('parses /release', () => {
+  it('parses /release with no arg', () => {
     expect(service.parseCommand('/release')).toEqual({ command: 'release' });
   });
 
-  it('parses /pause with no duration', () => {
+  it('parses /release with a phone target', () => {
+    expect(service.parseCommand('/release 628777')).toEqual({
+      command: 'release',
+      phone: '628777',
+    });
+  });
+
+  it('parses /pause with no args', () => {
     expect(service.parseCommand('/pause')).toEqual({ command: 'pause' });
   });
 
-  it('parses /pause with minutes duration', () => {
+  it('parses /pause with just a minutes duration', () => {
     expect(service.parseCommand('/pause 30')).toEqual({
       command: 'pause',
       minutes: 30,
     });
   });
 
-  it('parses /resume', () => {
+  it('parses /pause with phone and minutes', () => {
+    expect(service.parseCommand('/pause 628777 30')).toEqual({
+      command: 'pause',
+      phone: '628777',
+      minutes: 30,
+    });
+  });
+
+  it('parses /resume with optional phone', () => {
     expect(service.parseCommand('/resume')).toEqual({ command: 'resume' });
+    expect(service.parseCommand('/resume 628777')).toEqual({
+      command: 'resume',
+      phone: '628777',
+    });
+  });
+
+  it('parses /status with optional phone', () => {
+    expect(service.parseCommand('/status')).toEqual({ command: 'status' });
+    expect(service.parseCommand('/status 628777')).toEqual({
+      command: 'status',
+      phone: '628777',
+    });
   });
 
   it('returns null for non-commands', () => {

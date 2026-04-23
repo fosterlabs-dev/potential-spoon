@@ -4,6 +4,7 @@ import { AirtableModule } from './airtable/airtable.module';
 import { AvailabilityModule } from './availability/availability.module';
 import { ConversationModule } from './conversation/conversation.module';
 import { LoggerModule } from './logger/logger.module';
+import { MessageLogModule } from './messagelog/messagelog.module';
 import { OrchestratorModule } from './orchestrator/orchestrator.module';
 import { ParserModule } from './parser/parser.module';
 import { PricingModule } from './pricing/pricing.module';
@@ -20,6 +21,7 @@ import { WhatsappModule } from './whatsapp/whatsapp.module';
     TemplatesModule,
     ParserModule,
     ConversationModule,
+    MessageLogModule,
     WhatsappModule,
     OrchestratorModule,
   ],

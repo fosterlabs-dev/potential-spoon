@@ -4,47 +4,71 @@ import Anthropic from '@anthropic-ai/sdk';
 import { LoggerService } from '../logger/logger.service';
 
 export type Intent =
-  | 'availability_check'
-  | 'pricing_check'
   | 'greeting'
-  | 'handoff_request'
-  | 'unknown';
+  | 'availability_inquiry'
+  | 'pricing_inquiry'
+  | 'general_info'
+  | 'booking_confirmation'
+  | 'human_request'
+  | 'complaint_or_frustration'
+  | 'off_topic_or_unclear';
+
+export type HistoryMessage = {
+  role: 'customer' | 'assistant';
+  text: string;
+};
 
 export type ParseResult = {
   intent: Intent;
+  confidence: number;
+  customerName: string | null;
   checkIn: Date | null;
   checkOut: Date | null;
   guests: number | null;
 };
 
-const SYSTEM_PROMPT = `You parse short WhatsApp messages from prospective guests into structured data.
+const SYSTEM_PROMPT = `You parse short WhatsApp messages from prospective guests of a rental property into structured data.
 
 Return ONLY a JSON object with these keys (no prose, no code fences):
-- intent: one of "availability_check" | "pricing_check" | "greeting" | "handoff_request" | "unknown"
+- intent: one of
+  - "greeting" — the guest just said hi / introduced themselves / opened the conversation without a question
+  - "availability_inquiry" — asks whether specific dates are free, or asks about availability in general
+  - "pricing_inquiry" — asks about prices, rates, cost, or a quote
+  - "general_info" — asks a factual question about the property, location, amenities, check-in time, etc.
+  - "booking_confirmation" — explicitly confirms they want to proceed with a booking they've already discussed (e.g. "yes let's book those dates", "confirmed", "I'll pay now"). NOT a first-contact "I'd like to book the villa" — that's a greeting or availability_inquiry depending on whether they gave dates.
+  - "human_request" — explicitly asks to talk to a person, the owner, or a human
+  - "complaint_or_frustration" — is upset, frustrated, complaining, or expressing dissatisfaction
+  - "off_topic_or_unclear" — anything else you cannot classify confidently
+- confidence: number from 0 to 1 indicating how confident you are in the intent classification
+- customerName: the guest's name if they introduced themselves (e.g. "Hi I'm Maria"), otherwise null
 - checkIn: ISO date "YYYY-MM-DD" or null
 - checkOut: ISO date "YYYY-MM-DD" or null (exclusive — the guest's departure date)
 - guests: integer or null
 
 Rules:
-- If the message asks if a date range is free, intent = "availability_check".
-- If the message only asks for prices without specific dates, intent = "pricing_check".
-- If the guest seems to want a human, intent = "handoff_request".
-- If you cannot confidently extract intent, return "unknown" with nulls.
-- Never invent dates or guest counts. If absent, return null.`;
+- Use the recent conversation history (if provided) to disambiguate references like "those dates" or "yes".
+- Never invent dates or guest counts. If absent from both the message and recent context, return null.
+- If dates appear only as month names or rough phrases ("this summer", "next month"), still set intent correctly but leave dates null.
+- If you cannot confidently classify, use "off_topic_or_unclear" with confidence <= 0.5.`;
 
 const UNKNOWN: ParseResult = {
-  intent: 'unknown',
+  intent: 'off_topic_or_unclear',
+  confidence: 0,
+  customerName: null,
   checkIn: null,
   checkOut: null,
   guests: null,
 };
 
 const VALID_INTENTS: readonly Intent[] = [
-  'availability_check',
-  'pricing_check',
   'greeting',
-  'handoff_request',
-  'unknown',
+  'availability_inquiry',
+  'pricing_inquiry',
+  'general_info',
+  'booking_confirmation',
+  'human_request',
+  'complaint_or_frustration',
+  'off_topic_or_unclear',
 ];
 
 @Injectable()
@@ -63,14 +87,19 @@ export class ParserService {
       config.get<string>('CLAUDE_MODEL') ?? 'claude-haiku-4-5-20251001';
   }
 
-  async parse(message: string): Promise<ParseResult> {
+  async parse(
+    message: string,
+    history: HistoryMessage[] = [],
+  ): Promise<ParseResult> {
+    const userContent = this.buildUserContent(message, history);
+
     let raw: string;
     try {
       const response = await this.client.messages.create({
         model: this.model,
         max_tokens: 512,
         system: SYSTEM_PROMPT,
-        messages: [{ role: 'user', content: message }],
+        messages: [{ role: 'user', content: userContent }],
       });
       const block = response.content[0];
       raw = block && block.type === 'text' ? block.text : '';
@@ -82,6 +111,17 @@ export class ParserService {
     }
 
     return this.coerce(raw, message);
+  }
+
+  private buildUserContent(
+    message: string,
+    history: HistoryMessage[],
+  ): string {
+    if (history.length === 0) return `New message: ${message}`;
+    const lines = history.map(
+      (h) => `${h.role === 'customer' ? 'Customer' : 'Assistant'}: ${h.text}`,
+    );
+    return `Recent conversation:\n${lines.join('\n')}\n\nNew message: ${message}`;
   }
 
   private coerce(raw: string, originalMessage: string): ParseResult {
@@ -102,13 +142,23 @@ export class ParserService {
 
     const intent = VALID_INTENTS.includes(p.intent as Intent)
       ? (p.intent as Intent)
-      : 'unknown';
+      : 'off_topic_or_unclear';
+
+    const confidence =
+      typeof p.confidence === 'number' && p.confidence >= 0 && p.confidence <= 1
+        ? p.confidence
+        : 0;
+
+    const customerName =
+      typeof p.customerName === 'string' && p.customerName.trim().length > 0
+        ? p.customerName.trim()
+        : null;
 
     const checkIn = this.toDate(p.checkIn);
     const checkOut = this.toDate(p.checkOut);
     const guests = typeof p.guests === 'number' ? p.guests : null;
 
-    return { intent, checkIn, checkOut, guests };
+    return { intent, confidence, customerName, checkIn, checkOut, guests };
   }
 
   private toDate(value: unknown): Date | null {

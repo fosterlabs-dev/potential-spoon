@@ -4,16 +4,27 @@ import { AvailabilityService } from '../availability/availability.service';
 import {
   ConversationService,
   ParsedCommand,
+  PendingDates,
 } from '../conversation/conversation.service';
 import { LoggerService } from '../logger/logger.service';
-import { ParserService } from '../parser/parser.service';
+import { MessageLogService } from '../messagelog/messagelog.service';
+import { Intent, ParserService } from '../parser/parser.service';
 import { PricingService } from '../pricing/pricing.service';
 import { TemplatesService } from '../templates/templates.service';
 import { WhatsappService } from '../whatsapp/whatsapp.service';
 
-const PAUSE_ON_ERROR_MIN = 60;
+const PAUSE_ON_HANDOFF_MIN = 60;
+const HISTORY_LIMIT = 6;
+const SEPTEMBER = 8;
 
 type IncomingMessage = { from: string; text: string };
+
+type MergedIntent = {
+  checkIn: Date | null;
+  checkOut: Date | null;
+  guests: number | null;
+  customerName: string | null;
+};
 
 @Injectable()
 export class MessageHandlerService {
@@ -26,6 +37,7 @@ export class MessageHandlerService {
     private readonly templates: TemplatesService,
     private readonly whatsapp: WhatsappService,
     private readonly conversation: ConversationService,
+    private readonly messageLog: MessageLogService,
     private readonly logger: LoggerService,
     config: ConfigService,
   ) {
@@ -33,6 +45,8 @@ export class MessageHandlerService {
   }
 
   async handle(msg: IncomingMessage): Promise<void> {
+    await this.messageLog.log(msg.from, 'in', msg.text);
+
     const cmd = this.conversation.parseCommand(msg.text);
     if (cmd) {
       if (msg.from !== this.ownerPhone) {
@@ -45,104 +59,207 @@ export class MessageHandlerService {
       return;
     }
 
+    const state = await this.conversation.getState(msg.from);
+    if (state.status !== 'bot') {
+      this.logger.info('conversation', 'silent drop: not in bot mode', {
+        from: msg.from,
+        status: state.status,
+      });
+      return;
+    }
+
     try {
-      const parsed = await this.parser.parse(msg.text);
+      const history = await this.messageLog.recent(msg.from, HISTORY_LIMIT);
+      const parsed = await this.parser.parse(msg.text, history);
+      const merged = this.mergeWithPending(
+        {
+          checkIn: parsed.checkIn,
+          checkOut: parsed.checkOut,
+          guests: parsed.guests,
+          customerName: parsed.customerName,
+        },
+        state.pendingDates,
+        state.customerName,
+      );
 
-      switch (parsed.intent) {
-        case 'availability_check': {
-          if (!parsed.checkIn || !parsed.checkOut) {
-            await this.reply(msg.from, 'needs_details', {});
-            return;
-          }
-          const ok = await this.availability.isRangeAvailable(
-            parsed.checkIn,
-            parsed.checkOut,
-          );
-          if (!ok) {
-            await this.reply(msg.from, 'availability_unavailable', {
-              checkIn: parsed.checkIn.toISOString().slice(0, 10),
-              checkOut: parsed.checkOut.toISOString().slice(0, 10),
-            });
-            return;
-          }
-          const quote = await this.pricing.calculate(
-            parsed.checkIn,
-            parsed.checkOut,
-          );
-          await this.reply(msg.from, 'availability_confirmed', {
-            nights: quote.nights,
-            total: quote.total,
-            guests: parsed.guests ?? '',
-          });
-          return;
-        }
+      await this.conversation.updateContext(msg.from, {
+        lastIntent: parsed.intent,
+        customerName: merged.customerName ?? undefined,
+        pendingDates: this.serializePending(merged),
+      });
 
-        case 'pricing_check':
-        case 'greeting': {
-          await this.reply(msg.from, 'needs_details', {});
-          return;
-        }
-
-        case 'handoff_request':
-        case 'unknown':
-        default: {
-          await this.handoff(msg.from, msg.text);
-          return;
-        }
-      }
+      await this.route(msg.from, parsed.intent, merged);
     } catch (err) {
       this.logger.error('conversation', 'message handling failed', {
         from: msg.from,
         error: (err as Error).message,
       });
-      await this.handoff(msg.from, msg.text);
+      await this.handoff(msg.from, msg.text, 'unclear_handoff');
     }
+  }
+
+  private async route(
+    from: string,
+    intent: Intent,
+    merged: MergedIntent,
+  ): Promise<void> {
+    switch (intent) {
+      case 'greeting':
+        if (merged.checkIn && merged.checkOut) {
+          await this.handleAvailability(from, merged);
+          return;
+        }
+        await this.reply(from, 'greeting_ask_dates', {});
+        return;
+
+      case 'availability_inquiry':
+        if (!merged.checkIn || !merged.checkOut) {
+          await this.reply(from, 'dates_unclear_ask_clarify', {});
+          return;
+        }
+        await this.handleAvailability(from, merged);
+        return;
+
+      case 'pricing_inquiry':
+        if (!merged.checkIn || !merged.checkOut) {
+          await this.reply(from, 'pricing_needs_dates', {});
+          return;
+        }
+        await this.handleAvailability(from, merged);
+        return;
+
+      case 'general_info':
+        await this.handoff(from, '', 'faq_unknown_handoff');
+        return;
+
+      case 'booking_confirmation':
+        await this.handoff(from, '', 'booking_confirmed_handoff');
+        return;
+
+      case 'human_request':
+        await this.handoff(from, '', 'human_request_handoff');
+        return;
+
+      case 'complaint_or_frustration':
+        await this.handoff(from, '', 'complaint_handoff');
+        return;
+
+      case 'off_topic_or_unclear':
+      default:
+        await this.handoff(from, '', 'unclear_handoff');
+        return;
+    }
+  }
+
+  private async handleAvailability(
+    from: string,
+    merged: MergedIntent,
+  ): Promise<void> {
+    if (!merged.checkIn || !merged.checkOut) return;
+
+    const ok = await this.availability.isRangeAvailable(
+      merged.checkIn,
+      merged.checkOut,
+    );
+    if (!ok) {
+      await this.reply(from, 'availability_no_handoff', {
+        checkIn: this.isoDate(merged.checkIn),
+        checkOut: this.isoDate(merged.checkOut),
+      });
+      return;
+    }
+
+    const quote = await this.pricing.calculate(merged.checkIn, merged.checkOut);
+    if (!quote.meetsMinNights) {
+      await this.reply(from, 'minimum_stay_not_met', {
+        minNights: quote.minNights,
+      });
+      return;
+    }
+
+    await this.reply(
+      from,
+      'availability_yes_quote',
+      {
+        nights: quote.nights,
+        total: quote.total,
+        guests: merged.guests ?? '',
+        checkIn: this.isoDate(merged.checkIn),
+        checkOut: this.isoDate(merged.checkOut),
+      },
+      this.shouldAppendHarvest(merged.checkIn) ? 'september_wine_harvest_note' : undefined,
+    );
   }
 
   private async runOwnerCommand(cmd: ParsedCommand): Promise<void> {
     if (!this.ownerPhone) return;
+    const target = cmd.phone ?? this.ownerPhone;
 
     if (cmd.command === 'pause') {
       await this.conversation.setStatus(
-        this.ownerPhone,
+        target,
         'paused',
         cmd.minutes ? { pauseForMinutes: cmd.minutes } : {},
       );
-      await this.whatsapp.sendMessage(
-        this.ownerPhone,
-        cmd.minutes ? `bot paused for ${cmd.minutes} min` : 'bot paused',
-        { override: true },
+      await this.notifyOwner(
+        cmd.minutes
+          ? `paused ${target} for ${cmd.minutes} min`
+          : `paused ${target}`,
       );
       return;
     }
     if (cmd.command === 'release') {
-      await this.conversation.setStatus(this.ownerPhone, 'human');
-      await this.whatsapp.sendMessage(
-        this.ownerPhone,
-        'released to human',
-        { override: true },
+      await this.conversation.setStatus(target, 'human');
+      await this.notifyOwner(`${target} released to human`);
+      return;
+    }
+    if (cmd.command === 'status') {
+      const state = await this.conversation.getState(target);
+      await this.notifyOwner(
+        `${target}: ${state.status}${state.lastIntent ? ` (last: ${state.lastIntent})` : ''}`,
       );
       return;
     }
-    await this.conversation.setStatus(this.ownerPhone, 'bot');
-    await this.whatsapp.sendMessage(this.ownerPhone, 'bot resumed', {
-      override: true,
-    });
+    await this.conversation.setStatus(target, 'bot');
+    await this.notifyOwner(`${target} bot resumed`);
   }
 
   private async reply(
     to: string,
     key: string,
     vars: Record<string, string | number | boolean>,
+    appendKey?: string,
+    options: { override?: boolean } = {},
   ): Promise<void> {
-    const text = await this.templates.render(key, vars);
-    await this.whatsapp.sendMessage(to, text);
+    let text = await this.templates.render(key, vars);
+    if (appendKey) {
+      try {
+        const note = await this.templates.render(appendKey, {});
+        text = `${text}\n\n${note}`;
+      } catch (err) {
+        this.logger.warn('templates', 'could not render append template', {
+          appendKey,
+          error: (err as Error).message,
+        });
+      }
+    }
+    await this.whatsapp.sendMessage(to, text, options);
+    await this.messageLog.log(to, 'out', text);
   }
 
-  private async handoff(from: string, originalText: string): Promise<void> {
+  private async notifyOwner(text: string): Promise<void> {
+    if (!this.ownerPhone) return;
+    await this.whatsapp.sendMessage(this.ownerPhone, text, { override: true });
+  }
+
+  private async handoff(
+    from: string,
+    originalText: string,
+    templateKey: string,
+  ): Promise<void> {
     try {
       await this.conversation.setStatus(from, 'paused', {
-        pauseForMinutes: PAUSE_ON_ERROR_MIN,
+        pauseForMinutes: PAUSE_ON_HANDOFF_MIN,
       });
     } catch (err) {
       this.logger.error('conversation', 'failed to set pause status', {
@@ -152,11 +269,11 @@ export class MessageHandlerService {
     }
 
     try {
-      const text = await this.templates.render('holding_reply', {});
-      await this.whatsapp.sendMessage(from, text);
+      await this.reply(from, templateKey, {}, undefined, { override: true });
     } catch (err) {
-      this.logger.error('conversation', 'failed to send holding reply', {
+      this.logger.error('conversation', 'failed to send handoff reply', {
         from,
+        templateKey,
         error: (err as Error).message,
       });
     }
@@ -165,7 +282,7 @@ export class MessageHandlerService {
       try {
         await this.whatsapp.sendMessage(
           this.ownerPhone,
-          `needs attention from ${from}: ${originalText}`,
+          `needs attention from ${from}${originalText ? `: ${originalText}` : ''}`,
           { override: true },
         );
       } catch (err) {
@@ -174,5 +291,48 @@ export class MessageHandlerService {
         });
       }
     }
+  }
+
+  private mergeWithPending(
+    parsed: MergedIntent,
+    pending: PendingDates | null,
+    storedName: string | null,
+  ): MergedIntent {
+    const pendingCheckIn = pending?.checkIn
+      ? this.parseIso(pending.checkIn)
+      : null;
+    const pendingCheckOut = pending?.checkOut
+      ? this.parseIso(pending.checkOut)
+      : null;
+    return {
+      checkIn: parsed.checkIn ?? pendingCheckIn,
+      checkOut: parsed.checkOut ?? pendingCheckOut,
+      guests: parsed.guests ?? pending?.guests ?? null,
+      customerName: parsed.customerName ?? storedName,
+    };
+  }
+
+  private serializePending(merged: MergedIntent): PendingDates | null {
+    if (!merged.checkIn && !merged.checkOut && merged.guests === null) {
+      return null;
+    }
+    return {
+      checkIn: merged.checkIn ? this.isoDate(merged.checkIn) : null,
+      checkOut: merged.checkOut ? this.isoDate(merged.checkOut) : null,
+      guests: merged.guests,
+    };
+  }
+
+  private parseIso(value: string): Date | null {
+    const d = new Date(value);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+
+  private isoDate(d: Date): string {
+    return d.toISOString().slice(0, 10);
+  }
+
+  private shouldAppendHarvest(checkIn: Date): boolean {
+    return checkIn.getUTCMonth() === SEPTEMBER;
   }
 }

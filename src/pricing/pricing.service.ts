@@ -3,8 +3,8 @@ import { AirtableService } from '../airtable/airtable.service';
 import { LoggerService } from '../logger/logger.service';
 
 export type PricingRule = {
-  startDate: Date;
-  endDate: Date;
+  startDate?: Date;
+  endDate?: Date;
   nightlyRate: number;
   minNights?: number;
   label?: string;
@@ -41,15 +41,23 @@ export class PricingService {
     const rules: PricingRule[] = [];
     for (const row of rows) {
       const f = row.fields;
-      if (!f.start_date || !f.end_date || typeof f.nightly_rate !== 'number') {
+      if (typeof f.nightly_rate !== 'number') {
+        this.logger.warn('pricing', 'skipping malformed pricing row', {
+          id: row.id,
+        });
+        continue;
+      }
+      const hasStart = !!f.start_date;
+      const hasEnd = !!f.end_date;
+      if (hasStart !== hasEnd) {
         this.logger.warn('pricing', 'skipping malformed pricing row', {
           id: row.id,
         });
         continue;
       }
       rules.push({
-        startDate: new Date(f.start_date),
-        endDate: new Date(f.end_date),
+        startDate: hasStart ? new Date(f.start_date!) : undefined,
+        endDate: hasEnd ? new Date(f.end_date!) : undefined,
         nightlyRate: f.nightly_rate,
         minNights: f.min_nights,
         label: f.label,
@@ -104,14 +112,20 @@ export class PricingService {
 
   private pickRule(rules: PricingRule[], night: Date): PricingRule | undefined {
     const t = night.getTime();
-    const candidates = rules.filter(
-      (r) => r.startDate.getTime() <= t && r.endDate.getTime() >= t,
+    const dated = rules.filter(
+      (r) =>
+        r.startDate !== undefined &&
+        r.endDate !== undefined &&
+        r.startDate.getTime() <= t &&
+        r.endDate.getTime() >= t,
     );
-    if (candidates.length === 0) return undefined;
-    return candidates.reduce((narrowest, r) => {
-      const span = (x: PricingRule) =>
-        x.endDate.getTime() - x.startDate.getTime();
-      return span(r) < span(narrowest) ? r : narrowest;
-    });
+    if (dated.length > 0) {
+      return dated.reduce((narrowest, r) => {
+        const span = (x: PricingRule) =>
+          x.endDate!.getTime() - x.startDate!.getTime();
+        return span(r) < span(narrowest) ? r : narrowest;
+      });
+    }
+    return rules.find((r) => !r.startDate && !r.endDate);
   }
 }
