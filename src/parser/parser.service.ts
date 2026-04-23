@@ -53,6 +53,7 @@ Rules:
 - Use the recent conversation history (if provided) to disambiguate references like "those dates" or "yes".
 - Never invent dates or guest counts. If absent from both the message and recent context, return null.
 - If dates appear only as month names or rough phrases ("this summer", "next month"), still set intent correctly but leave dates null.
+- When the guest gives a day + month without a year (e.g. "June 7th", "7/6"), resolve to the nearest FUTURE occurrence relative to today's date (provided below). Never return a date in the past.
 - If you cannot confidently classify, use "off_topic_or_unclear" with confidence <= 0.5.`;
 
 const UNKNOWN: ParseResult = {
@@ -123,11 +124,13 @@ export class ParserService {
     message: string,
     history: HistoryMessage[],
   ): string {
-    if (history.length === 0) return `New message: ${message}`;
+    const today = new Date().toISOString().slice(0, 10);
+    const header = `Today's date: ${today}`;
+    if (history.length === 0) return `${header}\n\nNew message: ${message}`;
     const lines = history.map(
       (h) => `${h.role === 'customer' ? 'Customer' : 'Assistant'}: ${h.text}`,
     );
-    return `Recent conversation:\n${lines.join('\n')}\n\nNew message: ${message}`;
+    return `${header}\n\nRecent conversation:\n${lines.join('\n')}\n\nNew message: ${message}`;
   }
 
   private coerce(raw: string, originalMessage: string): ParseResult {

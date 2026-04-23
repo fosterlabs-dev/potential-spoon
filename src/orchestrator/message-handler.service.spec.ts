@@ -6,7 +6,7 @@ import { LoggerService } from '../logger/logger.service';
 import { MessageLogService } from '../messagelog/messagelog.service';
 import { ParseResult, ParserService } from '../parser/parser.service';
 import { PricingService } from '../pricing/pricing.service';
-import { TemplatesService } from '../templates/templates.service';
+import { ResponseService } from '../response/response.service';
 import { WhatsappService } from '../whatsapp/whatsapp.service';
 import { MessageHandlerService } from './message-handler.service';
 
@@ -57,10 +57,10 @@ const makePricing = (
     calculate: jest.fn().mockResolvedValue(quote),
   }) as unknown as PricingService;
 
-const makeTemplates = (text = 'rendered'): TemplatesService =>
+const makeResponse = (text = 'rendered'): ResponseService =>
   ({
     render: jest.fn().mockResolvedValue(text),
-  }) as unknown as TemplatesService;
+  }) as unknown as ResponseService;
 
 const makeWhatsapp = (): WhatsappService =>
   ({
@@ -105,7 +105,7 @@ const build = (
     availability?: AvailabilityService;
     pricing?: PricingService;
     bookingRules?: BookingRulesService;
-    templates?: TemplatesService;
+    response?: ResponseService;
     whatsapp?: WhatsappService;
     conversation?: ConversationService;
     messageLog?: MessageLogService;
@@ -118,7 +118,7 @@ const build = (
     over.availability ?? makeAvailability(),
     over.pricing ?? makePricing(),
     over.bookingRules ?? makeBookingRules(),
-    over.templates ?? makeTemplates(),
+    over.response ?? makeResponse(),
     over.whatsapp ?? makeWhatsapp(),
     over.conversation ?? makeConversation(),
     over.messageLog ?? makeMessageLog(),
@@ -142,9 +142,9 @@ describe('MessageHandlerService.handle — inbound logging', () => {
 
   it('logs every outbound message to MessageLog', async () => {
     const parser = makeParser({ intent: 'greeting' });
-    const templates = makeTemplates('hi, what dates?');
+    const response = makeResponse('hi, what dates?');
     const messageLog = makeMessageLog();
-    const handler = build({ parser, templates, messageLog });
+    const handler = build({ parser, response, messageLog });
 
     await handler.handle({ from: CUSTOMER, text: 'hello' });
 
@@ -296,12 +296,12 @@ describe('MessageHandlerService.handle — availability flow', () => {
       checkIn: SUN_CHECK_IN,
       checkOut: SUN_CHECK_OUT,
     });
-    const templates = makeTemplates('booked');
-    const handler = build({ parser, templates });
+    const response = makeResponse('booked');
+    const handler = build({ parser, response });
 
     await handler.handle({ from: CUSTOMER, text: 'is Jul 6-13 free?' });
 
-    expect(templates.render).toHaveBeenCalledWith(
+    expect(response.render).toHaveBeenCalledWith(
       'availability_yes_quote',
       expect.objectContaining({ nights: 7, price: '€2,100' }),
     );
@@ -313,12 +313,12 @@ describe('MessageHandlerService.handle — availability flow', () => {
       checkIn: new Date('2025-09-07'),
       checkOut: new Date('2025-09-14'),
     });
-    const templates = makeTemplates('rendered');
-    const handler = build({ parser, templates });
+    const response = makeResponse('rendered');
+    const handler = build({ parser, response });
 
     await handler.handle({ from: CUSTOMER, text: '7-14 sep?' });
 
-    const calls = (templates.render as jest.Mock).mock.calls.map(
+    const calls = (response.render as jest.Mock).mock.calls.map(
       (c) => c[0] as string,
     );
     expect(calls).toContain('availability_yes_quote');
@@ -332,12 +332,12 @@ describe('MessageHandlerService.handle — availability flow', () => {
       checkOut: SUN_CHECK_OUT,
     });
     const availability = makeAvailability(false);
-    const templates = makeTemplates('taken');
-    const handler = build({ parser, availability, templates });
+    const response = makeResponse('taken');
+    const handler = build({ parser, availability, response });
 
     await handler.handle({ from: CUSTOMER, text: 'is Jul 6-13 free?' });
 
-    expect(templates.render).toHaveBeenCalledWith(
+    expect(response.render).toHaveBeenCalledWith(
       'availability_no_handoff',
       expect.objectContaining({ check_in: expect.any(String), check_out: expect.any(String), month: expect.any(String) }),
     );
@@ -345,12 +345,12 @@ describe('MessageHandlerService.handle — availability flow', () => {
 
   it('asks for clarification when dates are missing', async () => {
     const parser = makeParser({ intent: 'availability_inquiry' });
-    const templates = makeTemplates();
-    const handler = build({ parser, templates });
+    const response = makeResponse();
+    const handler = build({ parser, response });
 
     await handler.handle({ from: CUSTOMER, text: 'free this summer?' });
 
-    expect(templates.render).toHaveBeenCalledWith(
+    expect(response.render).toHaveBeenCalledWith(
       'dates_unclear_ask_clarify',
       expect.any(Object),
     );
@@ -402,12 +402,12 @@ describe('MessageHandlerService.handle — booking rules', () => {
       pass: false,
       reason: 'year_2026_redirect',
     });
-    const templates = makeTemplates();
-    const handler = build({ parser, bookingRules, templates });
+    const response = makeResponse();
+    const handler = build({ parser, bookingRules, response });
 
     await handler.handle({ from: CUSTOMER, text: 'available in 2026?' });
 
-    expect(templates.render).toHaveBeenCalledWith(
+    expect(response.render).toHaveBeenCalledWith(
       'year_2026_redirect',
       expect.any(Object),
     );
@@ -425,12 +425,12 @@ describe('MessageHandlerService.handle — booking rules', () => {
       suggestedCheckIn: '2025-07-13',
       suggestedCheckOut: '2025-07-20',
     });
-    const templates = makeTemplates();
-    const handler = build({ parser, bookingRules, templates });
+    const response = makeResponse();
+    const handler = build({ parser, bookingRules, response });
 
     await handler.handle({ from: CUSTOMER, text: 'Jul 7-13?' });
 
-    expect(templates.render).toHaveBeenCalledWith(
+    expect(response.render).toHaveBeenCalledWith(
       'dates_not_sunday_to_sunday',
       expect.objectContaining({
         suggested_check_in: expect.any(String),
@@ -451,12 +451,12 @@ describe('MessageHandlerService.handle — booking rules', () => {
       suggestedCheckIn: '2025-07-06',
       suggestedCheckOut: '2025-07-13',
     });
-    const templates = makeTemplates();
-    const handler = build({ parser, bookingRules, templates });
+    const response = makeResponse();
+    const handler = build({ parser, bookingRules, response });
 
     await handler.handle({ from: CUSTOMER, text: 'just one night?' });
 
-    expect(templates.render).toHaveBeenCalledWith(
+    expect(response.render).toHaveBeenCalledWith(
       'minimum_stay_not_met',
       expect.objectContaining({
         suggested_check_in: expect.any(String),
@@ -475,13 +475,13 @@ describe('MessageHandlerService.handle — booking rules', () => {
       pass: false,
       reason: 'long_stay_manual',
     });
-    const templates = makeTemplates();
+    const response = makeResponse();
     const conversation = makeConversation();
-    const handler = build({ parser, bookingRules, templates, conversation });
+    const handler = build({ parser, bookingRules, response, conversation });
 
     await handler.handle({ from: CUSTOMER, text: 'can I rent for November?' });
 
-    expect(templates.render).toHaveBeenCalledWith(
+    expect(response.render).toHaveBeenCalledWith(
       'long_stay_manual_pricing',
       expect.any(Object),
     );
@@ -499,14 +499,14 @@ describe('MessageHandlerService.handle — discount detection', () => {
       checkIn: SUN_CHECK_IN,
       checkOut: SUN_CHECK_OUT,
     });
-    const templates = makeTemplates();
+    const response = makeResponse();
     const conversation = makeConversation();
     const whatsapp = makeWhatsapp();
-    const handler = build({ parser, templates, conversation, whatsapp });
+    const handler = build({ parser, response, conversation, whatsapp });
 
     await handler.handle({ from: CUSTOMER, text: 'can I get a better rate?' });
 
-    expect(templates.render).toHaveBeenCalledWith(
+    expect(response.render).toHaveBeenCalledWith(
       'discount_request',
       expect.any(Object),
     );
@@ -527,12 +527,12 @@ describe('MessageHandlerService.handle — discount detection', () => {
       checkIn: SUN_CHECK_IN,
       checkOut: SUN_CHECK_OUT,
     });
-    const templates = makeTemplates();
-    const handler = build({ parser, templates });
+    const response = makeResponse();
+    const handler = build({ parser, response });
 
     await handler.handle({ from: CUSTOMER, text: 'how much for Jul?' });
 
-    const calledKeys = (templates.render as jest.Mock).mock.calls.map(
+    const calledKeys = (response.render as jest.Mock).mock.calls.map(
       (c) => c[0],
     );
     expect(calledKeys).not.toContain('discount_request');
@@ -542,12 +542,12 @@ describe('MessageHandlerService.handle — discount detection', () => {
 describe('MessageHandlerService.handle — other intents', () => {
   it('greeting without dates asks for them', async () => {
     const parser = makeParser({ intent: 'greeting' });
-    const templates = makeTemplates();
-    const handler = build({ parser, templates });
+    const response = makeResponse();
+    const handler = build({ parser, response });
 
     await handler.handle({ from: CUSTOMER, text: 'hi' });
 
-    expect(templates.render).toHaveBeenCalledWith(
+    expect(response.render).toHaveBeenCalledWith(
       'greeting_ask_dates',
       expect.any(Object),
     );
@@ -555,12 +555,12 @@ describe('MessageHandlerService.handle — other intents', () => {
 
   it('pricing_inquiry without dates asks for clarification', async () => {
     const parser = makeParser({ intent: 'pricing_inquiry' });
-    const templates = makeTemplates();
-    const handler = build({ parser, templates });
+    const response = makeResponse();
+    const handler = build({ parser, response });
 
     await handler.handle({ from: CUSTOMER, text: 'how much?' });
 
-    expect(templates.render).toHaveBeenCalledWith(
+    expect(response.render).toHaveBeenCalledWith(
       'dates_unclear_ask_clarify',
       expect.any(Object),
     );
@@ -568,14 +568,14 @@ describe('MessageHandlerService.handle — other intents', () => {
 
   it('booking_confirmation hands off and pauses', async () => {
     const parser = makeParser({ intent: 'booking_confirmation' });
-    const templates = makeTemplates();
+    const response = makeResponse();
     const conversation = makeConversation();
     const whatsapp = makeWhatsapp();
-    const handler = build({ parser, templates, conversation, whatsapp });
+    const handler = build({ parser, response, conversation, whatsapp });
 
     await handler.handle({ from: CUSTOMER, text: "let's book" });
 
-    expect(templates.render).toHaveBeenCalledWith(
+    expect(response.render).toHaveBeenCalledWith(
       'booking_confirmed_handoff',
       expect.any(Object),
     );
@@ -591,12 +591,12 @@ describe('MessageHandlerService.handle — other intents', () => {
 
   it('human_request hands off via human_request_handoff', async () => {
     const parser = makeParser({ intent: 'human_request' });
-    const templates = makeTemplates();
-    const handler = build({ parser, templates });
+    const response = makeResponse();
+    const handler = build({ parser, response });
 
     await handler.handle({ from: CUSTOMER, text: 'let me talk to someone' });
 
-    expect(templates.render).toHaveBeenCalledWith(
+    expect(response.render).toHaveBeenCalledWith(
       'human_request_handoff',
       expect.any(Object),
     );
@@ -604,12 +604,12 @@ describe('MessageHandlerService.handle — other intents', () => {
 
   it('complaint_or_frustration hands off via complaint_handoff', async () => {
     const parser = makeParser({ intent: 'complaint_or_frustration' });
-    const templates = makeTemplates();
-    const handler = build({ parser, templates });
+    const response = makeResponse();
+    const handler = build({ parser, response });
 
     await handler.handle({ from: CUSTOMER, text: 'this is awful' });
 
-    expect(templates.render).toHaveBeenCalledWith(
+    expect(response.render).toHaveBeenCalledWith(
       'complaint_handoff',
       expect.any(Object),
     );
@@ -617,15 +617,15 @@ describe('MessageHandlerService.handle — other intents', () => {
 
   it('general_info hands off via faq_unknown_handoff', async () => {
     const parser = makeParser({ intent: 'general_info' });
-    const templates = makeTemplates();
-    const handler = build({ parser, templates });
+    const response = makeResponse();
+    const handler = build({ parser, response });
 
     await handler.handle({
       from: CUSTOMER,
       text: 'do you have a hair dryer?',
     });
 
-    expect(templates.render).toHaveBeenCalledWith(
+    expect(response.render).toHaveBeenCalledWith(
       'faq_unknown_handoff',
       expect.any(Object),
     );
@@ -633,12 +633,12 @@ describe('MessageHandlerService.handle — other intents', () => {
 
   it('off_topic_or_unclear hands off via unclear_handoff', async () => {
     const parser = makeParser({ intent: 'off_topic_or_unclear' });
-    const templates = makeTemplates();
-    const handler = build({ parser, templates });
+    const response = makeResponse();
+    const handler = build({ parser, response });
 
     await handler.handle({ from: CUSTOMER, text: 'glarg' });
 
-    expect(templates.render).toHaveBeenCalledWith(
+    expect(response.render).toHaveBeenCalledWith(
       'unclear_handoff',
       expect.any(Object),
     );
@@ -656,21 +656,21 @@ describe('MessageHandlerService.handle — fail-safe paths', () => {
       isRangeAvailable: jest.fn().mockRejectedValue(new Error('ical down')),
     } as unknown as AvailabilityService;
     const conversation = makeConversation();
-    const templates = makeTemplates();
+    const response = makeResponse();
     const whatsapp = makeWhatsapp();
     const logger = makeLogger();
     const handler = build({
       parser,
       availability,
       conversation,
-      templates,
+      response,
       whatsapp,
       logger,
     });
 
     await handler.handle({ from: CUSTOMER, text: 'is Jul 6-13 free?' });
 
-    expect(templates.render).toHaveBeenCalledWith(
+    expect(response.render).toHaveBeenCalledWith(
       'unclear_handoff',
       expect.any(Object),
     );

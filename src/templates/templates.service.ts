@@ -21,6 +21,16 @@ export class TemplatesService {
     private readonly logger: LoggerService,
   ) {}
 
+  async fetchRaw(key: string): Promise<string[]> {
+    const rows = await this.airtable.list<TemplateFields>('Templates', {
+      filterByFormula: `{key}='${key}'`,
+    });
+    return rows
+      .filter((r) => typeof r.fields.text === 'string')
+      .sort((a, b) => (a.fields.variant ?? 0) - (b.fields.variant ?? 0))
+      .map((r) => r.fields.text as string);
+  }
+
   async render(key: string, vars: TemplateVars): Promise<string> {
     const rows = await this.airtable.list<TemplateFields>('Templates', {
       filterByFormula: `{key}='${key}'`,

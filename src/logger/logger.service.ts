@@ -7,6 +7,7 @@ export type LogModule =
   | 'availability'
   | 'pricing'
   | 'templates'
+  | 'response'
   | 'conversation'
   | 'messagelog'
   | 'airtable';
@@ -29,6 +30,7 @@ const MODULE_COLOR: Record<LogModule, string> = {
   availability: '\x1b[34m',
   pricing: '\x1b[33m',
   templates: '\x1b[32m',
+  response: '\x1b[92m',
   conversation: '\x1b[37m',
   messagelog: '\x1b[96m',
   airtable: '\x1b[90m',

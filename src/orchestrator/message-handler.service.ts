@@ -11,7 +11,7 @@ import { LoggerService } from '../logger/logger.service';
 import { MessageLogService } from '../messagelog/messagelog.service';
 import { Intent, ParserService } from '../parser/parser.service';
 import { PricingService } from '../pricing/pricing.service';
-import { TemplatesService, TemplateVars } from '../templates/templates.service';
+import { ResponseService, TemplateVars } from '../response/response.service';
 import { WhatsappService } from '../whatsapp/whatsapp.service';
 
 const PAUSE_ON_HANDOFF_MIN = 60;
@@ -36,7 +36,7 @@ export class MessageHandlerService {
     private readonly availability: AvailabilityService,
     private readonly pricing: PricingService,
     private readonly bookingRules: BookingRulesService,
-    private readonly templates: TemplatesService,
+    private readonly response: ResponseService,
     private readonly whatsapp: WhatsappService,
     private readonly conversation: ConversationService,
     private readonly messageLog: MessageLogService,
@@ -276,10 +276,10 @@ export class MessageHandlerService {
     appendKey?: string,
     options: { override?: boolean } = {},
   ): Promise<void> {
-    let text = await this.templates.render(key, vars);
+    let text = await this.response.render(key, vars);
     if (appendKey) {
       try {
-        const note = await this.templates.render(appendKey, {});
+        const note = await this.response.render(appendKey, {});
         text = `${text}\n\n${note}`;
       } catch (err) {
         this.logger.warn('templates', 'could not render append template', {
