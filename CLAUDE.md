@@ -1,130 +1,250 @@
 # CLAUDE.md
 
-Context and conventions for building the Rental WhatsApp Automation project.
+Context and conventions for building the **Bonté Maison WhatsApp Automation** project.
+
+> **Status legend:**
+> ✅ = Implemented / planned in original scope and still valid
+> 🟡 = Partially covered, needs expansion
+> 🔴 = New scope, not yet implemented
+> ⚠️ = Needs client clarification before building
+
+---
 
 ## Project overview
 
-WhatsApp automation that handles rental inquiries for a single property owner. Customer sends a WhatsApp message → bot parses intent/dates with Claude → checks iCal availability → looks up pricing in Airtable → replies using pre-approved templates.
+WhatsApp automation for **Bonté Maison**, a premium rental property near Duras, France. Owned by Jim. Single property, English-speaking guests.
 
-Single property, single client for now. No multi-tenant concerns.
+**Core behavior:** Customer sends WhatsApp → bot parses intent/dates with Claude → checks iCal availability → looks up pricing in Airtable → replies using pre-approved templates in Jim's voice. Bot nudges toward booking, offers 5-day date holds, runs follow-up sequences, and sends short WhatsApp nudges when SuperControl emails are sent.
+
+---
 
 ## Stack
 
-- **Runtime:** Node.js + Nest.js (monorepo, single app for now)
+- **Runtime:** Node.js + Nest.js (monorepo, single app)
 - **Language:** TypeScript (strict mode)
 - **Hosting:** Railway
 - **Data:**
-  - Airtable — pricing config, reply templates, conversation state (pause flags), logs
+  - Airtable — pricing, templates, conversations (CRM), holds, message log, follow-up queue
   - iCal feed — availability (fetched fresh per inquiry)
 - **External APIs:**
   - WhatsApp Business API (direct, not Twilio)
   - Anthropic Claude API (Haiku 4.5 for parsing)
+  - SuperControl — email ingestion (method TBD — IMAP or webhook) ⚠️
 - **Testing:** Jest + TDD
+- **Jobs:** node-cron for background tasks (hold expiries, follow-ups)
+
+---
 
 ## Architecture principles
 
-- **Templates, not LLM-generated replies.** Claude parses incoming messages only. All outbound messages come from Airtable templates with variable substitution. Never let Claude freestyle a customer-facing reply.
-- **Backend orchestrates, Airtable stores.** No chained Airtable automations. All logic lives in Nest.js.
-- **Fail safe toward the human.** When in doubt, send holding reply + notify client + pause bot. Never send a bad reply.
-- **Stateless per request where possible.** Conversation state in Airtable, not in memory. Railway restarts shouldn't break anything.
+- **Templates, not LLM-generated replies.** Claude parses. Templates reply. Never let Claude freestyle customer-facing copy.
+- **Backend orchestrates, Airtable stores.** No chained Airtable automations.
+- **Fail safe toward the human.** Uncertain = holding reply + notify Jim + pause.
+- **Premium tone throughout.** Warm, confident, quietly persuasive. Never pushy.
+- **Bot nudges toward booking.** After answering questions, conversion hooks ("happy to hold dates for you while you decide?").
+
+---
 
 ## Module structure
 
-Each concern is its own Nest.js module with a clear boundary. Never reach across modules — use services.
-
 ```
 src/
-├── whatsapp/       # WhatsApp Business API client, webhook handler, message sending
-├── parser/         # Claude integration, intent classification, date extraction
-├── availability/   # iCal fetching + parsing, date range checks
-├── pricing/        # Airtable pricing rules, quote calculation
-├── templates/      # Airtable template fetching, variable substitution, variant rotation
-├── conversation/   # Pause state, handoff logic, command parsing (/release, /pause, etc.)
-├── airtable/       # Shared Airtable client (all Airtable access goes through here)
-├── logger/         # Categorized colored logging
+├── whatsapp/          # WhatsApp Business API client, webhook handler, send logic
+├── parser/            # Claude integration, intent classification, date/entity extraction
+├── availability/      # iCal fetching + parsing, date range checks
+├── pricing/           # Seasonal pricing bands, quote calculation, long-stay detection
+├── templates/         # Airtable template fetching, variable substitution, variant rotation
+├── conversation/      # Conversation state, handoff logic, command parsing
+├── holds/             # 🔴 5-day hold system + expiry scheduler
+├── follow-ups/        # 🔴 24h + 7d follow-up sequences
+├── email-integration/ # 🔴 SuperControl email ingestion + nudge triggering
+├── notifications/     # 🔴 Jim escalation channel (WhatsApp to Jim's number)
+├── booking-rules/     # 🔴 Sunday changeover, 7-night minimum, 2026 blackout, etc.
+├── airtable/          # Shared Airtable client (all Airtable access goes through here)
+├── logger/            # Categorized colored logging
 └── app.module.ts
 ```
+
+---
 
 ## Conventions
 
 ### Airtable access
-All Airtable operations go through the `AirtableService`. Never import `airtable` SDK directly in feature modules. This makes mocking trivial in tests and centralizes rate limiting.
+All Airtable ops go through `AirtableService`. Never import Airtable SDK directly in feature modules.
 
 ### WhatsApp sending
-All outbound messages go through `WhatsappService.sendMessage()`. This service logs every send, checks conversation pause state before sending, and handles retries. No module sends WhatsApp messages directly.
+All outbound messages through `WhatsappService.sendMessage()`. Logs every send, respects pause state, handles retries.
 
 ### Logging
-Use the custom `LoggerService`, not `console.log` or Nest's default logger. Every log call specifies a module tag and level:
+Use `LoggerService`, not `console.log`. Every log specifies module tag + level:
 
 ```ts
 logger.info('whatsapp', 'Received message from +62...');
 logger.warn('parser', 'Claude returned unexpected format', { raw });
-logger.error('pricing', 'Missing pricing row for date', { date });
+logger.error('pricing', 'Missing pricing band for date', { date });
 ```
 
-Colors per module (set up once in LoggerService):
+Colors:
 - `whatsapp` → cyan
 - `parser` → magenta
 - `availability` → blue
 - `pricing` → yellow
 - `templates` → green
 - `conversation` → white
+- `holds` → bright yellow
+- `follow-ups` → bright blue
+- `email-integration` → bright magenta
+- `notifications` → bright green
+- `booking-rules` → bright cyan
 - `airtable` → gray
-- `error` → red (overrides module color)
-
-Levels: `debug | info | warn | error`. Debug off in production.
+- `error` → red (overrides)
 
 ### Error handling
-- Never let an unhandled error crash a webhook response. Webhook always returns 200 to WhatsApp (they retry aggressively on non-200).
-- Errors inside message processing → log + send holding reply to customer + notify client.
-- No silent failures. Every catch block logs.
+- Webhook always returns 200 (WhatsApp retries aggressively on non-200).
+- Errors inside processing → log + holding reply + notify Jim.
+- No silent failures.
+
+### Tone rules (enforced in templates)
+- Use **"reserved"** not "sold" or "taken"
+- Warm, premium, human
+- Confident but not pushy
+- Gently guide toward booking
+- Sign off as **Jim**, include **www.bontemaison.com** where appropriate
+- Vary sign-offs: "Thanks", "Thank you", "Kind regards", "Many thanks"
+
+---
 
 ## Development approach
 
 ### TDD workflow
-For every new feature:
-
-1. Write the failing test first (unit test in `*.spec.ts` next to the file)
-2. Write minimal code to make it pass
-3. Refactor
-4. Move on
-
-Don't write implementation before tests.
+Write failing test → minimal code → refactor → move on.
 
 ### Incremental build order
-Build in this order — each step should be fully working and tested before moving on. Don't skip ahead.
 
-1. **Logger service** — needed everywhere else
-2. **Airtable service** — base client, read-only first
-3. **iCal parser** — fetch feed, parse events, "is date X available?" function
-4. **Pricing calculator** — given dates + Airtable rules, return quote
-5. **Template service** — fetch template by key, substitute variables, variant rotation
-6. **Claude parser** — extract structured data from WhatsApp messages (dates, intent, guest count)
-7. **WhatsApp webhook** — receive message, validate signature, acknowledge
-8. **WhatsApp sender** — send templated message back
-9. **Conversation state** — pause/resume, command handling (/release, /pause, /resume)
-10. **Orchestration** — wire it all together in a MessageHandler service
-11. **End-to-end tests** — simulate incoming message, verify outgoing reply
+> Status: original plan covered Phase 0. Phases 1-7 are new scope from Jim's updated requirements.
 
-Each step = at least one unit test passing. Commit after each.
+#### ✅ Phase 0 — Foundation (originally planned, not yet built)
+1. Logger service
+2. Airtable service (base client)
+3. iCal parser + availability check
+4. Pricing calculator (basic)
+5. Template service
+6. Claude parser
+7. WhatsApp webhook + sender
+8. Conversation state + pause/resume commands
+9. Basic orchestration (MessageHandler)
+
+#### 🔴 Phase 1 — Booking rules & enhanced pricing
+10. Booking rules module (Sunday changeover, 7-night minimum enforcement, weekly blocks 1-2-3 weeks)
+11. Seasonal pricing bands (multi-band schema in Airtable)
+12. 2026 fully-booked redirect rule
+13. Long-stay detection (Oct-May) → manual pricing flag
+14. Discount request detection → flag + notify Jim
+
+#### 🔴 Phase 2 — Hold system
+15. Holds table in Airtable
+16. "Offer to hold" after quote scenarios
+17. Hold acceptance flow
+18. Hold expiry cron (daily check)
+19. Reminder before expiry (day 4)
+20. Auto-release on expiry
+21. Bot awareness: if dates held by someone else, treat as unavailable
+
+#### 🔴 Phase 3 — Follow-up sequences
+22. Follow-up queue table in Airtable
+23. Scheduler: detect enquiries with no reply + no booking
+24. 24-hour follow-up send
+25. 7-day follow-up send
+26. Cancel sequence if customer replies or books
+
+#### 🔴 Phase 4 — CRM expansion
+27. Expand Conversations schema (name, email, price_quoted, status enum, follow_up_count, etc.)
+28. Every handler updates CRM fields
+29. Status transitions: New → Responded → Follow-up → Booked / Lost
+
+#### 🔴 Phase 5 — SuperControl email integration
+30. Email ingestion method (IMAP monitoring OR webhook — TBD ⚠️)
+31. Email parser (identify type: booking confirmation / arrival / pre-arrival / mid-stay / thank you / review)
+32. Guest matcher (match email recipient → WhatsApp conversation)
+33. Nudge trigger logic + dedup
+34. "Do not send if guest cannot be confidently matched" rule
+
+#### 🔴 Phase 6 — Notifications to Jim
+35. Notification channel setup (WhatsApp to Jim's number — assuming this by default)
+36. Wire escalation triggers: uncertain, outside KB, discount, long stay, hold conflicts, unmatched guest
+
+#### 🔴 Phase 7 — Instant book toggle
+37. Config flag `INSTANT_BOOK_ENABLED`
+38. Swap `booking_confirmed_handoff` variant based on flag
+39. When Jim flips the switch post-SuperControl setup: bot redirects to website
+
+---
 
 ### Testing rules
-- Unit tests mock all external services (Airtable, WhatsApp, Claude, iCal HTTP fetch)
-- Use `*.spec.ts` colocated with source files
-- One test file per service/module
-- Test the edge cases explicitly: empty iCal, missing pricing row, Claude returns malformed JSON, WhatsApp API 429, etc.
-- No integration tests against real Airtable/WhatsApp in CI. Those are for manual verification locally.
+- Mock all external services in unit tests
+- `*.spec.ts` colocated with source
+- Test edge cases: empty iCal, missing pricing band, Claude malformed JSON, WhatsApp API 429, expired holds on boot, duplicate email events
+- No integration tests against real APIs in CI
 
-## Airtable schema (reference)
+---
 
-Tables to set up:
+## Airtable schema
 
-- **Pricing** — base rates, seasonal rules, minimum nights, discounts
-- **Templates** — key (e.g. `availability_confirmed`), variant number, text with `{placeholders}`
-- **Conversations** — phone number, status (`bot | human | paused`), pause_until timestamp, last_message_at
-- **MessageLog** — phone, direction (in/out), text, intent, timestamp (audit trail)
+### `Pricing`
+- `season_name` (string)
+- `start_date` (date)
+- `end_date` (date)
+- `weekly_rate` (currency)
+- `notes` (text)
 
-Schema details TBD when Airtable is set up.
+### `Templates`
+- `key` (string, e.g. `availability_yes_quote`)
+- `variant` (number)
+- `text` (long text, with `{placeholders}`)
+- `active` (checkbox)
+
+### `Conversations` (CRM)
+- `phone` (string, primary)
+- `guest_name` (string)
+- `email` (string)
+- `status` (enum: `New | Responded | Follow-up | Booked | Lost`)
+- `pause_status` (enum: `bot | human | paused`)
+- `pause_until` (datetime)
+- `dates_requested` (string — most recent)
+- `price_quoted` (currency — most recent)
+- `availability_result` (string — most recent)
+- `last_intent` (string)
+- `last_activity` (datetime)
+- `follow_up_count` (number)
+- `follow_up_24h_sent` (checkbox)
+- `follow_up_7d_sent` (checkbox)
+- `enquiry_source` (string)
+- `notes` (long text — Jim's manual notes)
+
+### `Holds` 🔴
+- `phone` (string, linked to Conversations)
+- `check_in` (date)
+- `check_out` (date)
+- `hold_created_at` (datetime)
+- `hold_expires_at` (datetime — hold_created_at + 5 days)
+- `reminder_sent` (checkbox)
+- `status` (enum: `active | expired | converted | cancelled`)
+
+### `MessageLog`
+- `phone`
+- `direction` (`in | out`)
+- `text`
+- `intent` (parsed, if direction=in)
+- `template_key` (if direction=out)
+- `timestamp`
+
+### `BookingRules` 🔴
+Simple key-value config for rules that change:
+- `key` (e.g. `year_2026_fully_booked`)
+- `value`
+- `active`
+
+---
 
 ## Environment variables
 
@@ -144,7 +264,21 @@ ANTHROPIC_API_KEY=
 CLAUDE_MODEL=claude-haiku-4-5-20251001
 
 # iCal
-ICAL_URL=
+ICAL_URL=https://ical.promotemyplace.com/4ee2e6e0bce533ec4edd08202ce80eb9/calendar.ics
+
+# Jim's notification channel
+JIM_WHATSAPP_NUMBER=
+
+# SuperControl email integration (TBD method)
+SUPERCONTROL_IMAP_HOST=
+SUPERCONTROL_IMAP_USER=
+SUPERCONTROL_IMAP_PASS=
+# OR (if webhook):
+SUPERCONTROL_WEBHOOK_SECRET=
+
+# Feature flags
+INSTANT_BOOK_ENABLED=false
+YEAR_2026_FULLY_BOOKED=true
 
 # App
 PORT=3000
@@ -152,21 +286,77 @@ NODE_ENV=development
 LOG_LEVEL=debug
 ```
 
+---
+
+## Claude parser output (reference)
+
+Claude classifies intent and extracts entities per incoming message. Expected JSON output:
+
+```json
+{
+  "intent": "availability_inquiry | pricing_inquiry | greeting | general_info | booking_confirmation | hold_request | discount_request | human_request | complaint_or_frustration | off_topic_or_unclear",
+  "check_in_date": "YYYY-MM-DD | null",
+  "check_out_date": "YYYY-MM-DD | null",
+  "nights": "number | null",
+  "guest_count": "number | null",
+  "guest_name": "string | null",
+  "guest_email": "string | null",
+  "mentions_dogs": "boolean",
+  "mentions_discount": "boolean",
+  "high_intent_signal": "boolean",
+  "confidence": "high | low",
+  "notes": "string — disambiguation context"
+}
+```
+
+`high_intent_signal` = true when message suggests booking readiness ("this looks great", multiple questions, "we'd like to come", etc.) → triggers hold offer in reply.
+
+---
+
+## Booking rules (validation logic)
+
+Enforced in `booking-rules/` module before pricing/availability:
+
+1. **Check-in must be Sunday.** If not → suggest nearest Sunday.
+2. **Check-out must be Sunday.** Duration in multiples of 7 (1, 2, or 3 weeks).
+3. **Minimum 7 nights.** Fewer → offer 7-night alternative.
+4. **2026 dates → redirect to 2027.** (Use iCal to suggest actual 2027 availability.)
+5. **Oct–May + long stay (>3 weeks or monthly):** flag manual pricing, do not auto-quote.
+6. **Stay spans two pricing bands:** use the band containing the check-in date. ⚠️ *Assumed, needs client confirmation.*
+
+---
+
 ## What NOT to do
 
-- **Don't use Claude to write customer-facing replies.** Parsing only.
-- **Don't chain Airtable automations.** Orchestration stays in the backend.
-- **Don't store state in memory.** Railway restarts will wipe it. Use Airtable.
-- **Don't skip tests.** TDD is not optional for this project.
-- **Don't use console.log.** Always go through LoggerService.
-- **Don't bypass the AirtableService or WhatsappService.** All access goes through them.
-- **Don't overengineer.** Bare minimum first. Expand when there's a real reason.
+- **No LLM-generated customer replies.** Ever.
+- **No chained Airtable automations.**
+- **No in-memory state.** Railway restarts will wipe it.
+- **No skipping tests.**
+- **No `console.log`.** Use LoggerService.
+- **No bypassing AirtableService / WhatsappService.**
+- **No proactive discount offers.** Bot never suggests a discount.
+- **No alternative-date suggestions when unavailable.** Jim handles those.
+- **No sending WhatsApp to unmatched guests** in SuperControl integration.
+- **No overengineering.** Bare minimum first.
 
-## Out of scope (for v1)
+---
+
+## Out of scope (confirmed)
 
 - Multiple properties
-- Taking bookings or payments
-- Languages other than English
-- Post-booking support (complaints, cancellations)
-- Dashboard/admin UI
-- Compound responses (multi-intent stitched replies)
+- Taking payments
+- Non-English languages
+- Complaint resolution (hand off only)
+- Admin dashboard / UI
+- Compound responses (multi-intent stitching)
+- 48-hour follow-up (explicitly removed by client)
+
+---
+
+## Open questions ⚠️
+
+1. **SuperControl integration method** — IMAP monitoring or webhook?
+2. **Pricing band edge case** — stay spanning two bands: which rate? (Assumed: check-in date's band.)
+3. **Long stay threshold** — strictly monthly (1-6 months) or any stay >3 weeks in Oct-May?
+4. **Jim's notification channel** — assumed WhatsApp to his personal number. Confirm?
+5. **Hold vs. real booking conflict** — assumed bot says "unavailable" to a second enquirer when dates are held by another. Confirm?

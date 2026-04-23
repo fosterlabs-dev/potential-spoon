@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AvailabilityService } from '../availability/availability.service';
+import { BookingRulesService } from '../booking-rules/booking-rules.service';
 import {
   ConversationService,
   ParsedCommand,
@@ -10,12 +11,12 @@ import { LoggerService } from '../logger/logger.service';
 import { MessageLogService } from '../messagelog/messagelog.service';
 import { Intent, ParserService } from '../parser/parser.service';
 import { PricingService } from '../pricing/pricing.service';
-import { TemplatesService } from '../templates/templates.service';
+import { TemplatesService, TemplateVars } from '../templates/templates.service';
 import { WhatsappService } from '../whatsapp/whatsapp.service';
 
 const PAUSE_ON_HANDOFF_MIN = 60;
 const HISTORY_LIMIT = 6;
-const SEPTEMBER = 8;
+const SEPTEMBER = 8; // UTC month index
 
 type IncomingMessage = { from: string; text: string };
 
@@ -34,6 +35,7 @@ export class MessageHandlerService {
     private readonly parser: ParserService,
     private readonly availability: AvailabilityService,
     private readonly pricing: PricingService,
+    private readonly bookingRules: BookingRulesService,
     private readonly templates: TemplatesService,
     private readonly whatsapp: WhatsappService,
     private readonly conversation: ConversationService,
@@ -68,6 +70,8 @@ export class MessageHandlerService {
       return;
     }
 
+    const storedName = state.customerName;
+
     try {
       const history = await this.messageLog.recent(msg.from, HISTORY_LIMIT);
       const parsed = await this.parser.parse(msg.text, history);
@@ -79,7 +83,7 @@ export class MessageHandlerService {
           customerName: parsed.customerName,
         },
         state.pendingDates,
-        state.customerName,
+        storedName,
       );
 
       await this.conversation.updateContext(msg.from, {
@@ -88,13 +92,22 @@ export class MessageHandlerService {
         pendingDates: this.serializePending(merged),
       });
 
+      if (parsed.mentionsDiscount) {
+        await this.handoff(msg.from, msg.text, 'discount_request', {
+          name: merged.customerName ?? '',
+        });
+        return;
+      }
+
       await this.route(msg.from, parsed.intent, merged);
     } catch (err) {
       this.logger.error('conversation', 'message handling failed', {
         from: msg.from,
         error: (err as Error).message,
       });
-      await this.handoff(msg.from, msg.text, 'unclear_handoff');
+      await this.handoff(msg.from, msg.text, 'unclear_handoff', {
+        name: storedName ?? '',
+      });
     }
   }
 
@@ -103,18 +116,20 @@ export class MessageHandlerService {
     intent: Intent,
     merged: MergedIntent,
   ): Promise<void> {
+    const name = merged.customerName ?? '';
+
     switch (intent) {
       case 'greeting':
         if (merged.checkIn && merged.checkOut) {
           await this.handleAvailability(from, merged);
           return;
         }
-        await this.reply(from, 'greeting_ask_dates', {});
+        await this.reply(from, 'greeting_ask_dates', { name });
         return;
 
       case 'availability_inquiry':
         if (!merged.checkIn || !merged.checkOut) {
-          await this.reply(from, 'dates_unclear_ask_clarify', {});
+          await this.reply(from, 'dates_unclear_ask_clarify', { name });
           return;
         }
         await this.handleAvailability(from, merged);
@@ -122,31 +137,31 @@ export class MessageHandlerService {
 
       case 'pricing_inquiry':
         if (!merged.checkIn || !merged.checkOut) {
-          await this.reply(from, 'pricing_needs_dates', {});
+          await this.reply(from, 'dates_unclear_ask_clarify', { name });
           return;
         }
         await this.handleAvailability(from, merged);
         return;
 
       case 'general_info':
-        await this.handoff(from, '', 'faq_unknown_handoff');
+        await this.handoff(from, '', 'faq_unknown_handoff', { name });
         return;
 
       case 'booking_confirmation':
-        await this.handoff(from, '', 'booking_confirmed_handoff');
+        await this.handoff(from, '', 'booking_confirmed_handoff', { name });
         return;
 
       case 'human_request':
-        await this.handoff(from, '', 'human_request_handoff');
+        await this.handoff(from, '', 'human_request_handoff', { name });
         return;
 
       case 'complaint_or_frustration':
-        await this.handoff(from, '', 'complaint_handoff');
+        await this.handoff(from, '', 'complaint_handoff', { name });
         return;
 
       case 'off_topic_or_unclear':
       default:
-        await this.handoff(from, '', 'unclear_handoff');
+        await this.handoff(from, '', 'unclear_handoff', { name });
         return;
     }
   }
@@ -157,37 +172,67 @@ export class MessageHandlerService {
   ): Promise<void> {
     if (!merged.checkIn || !merged.checkOut) return;
 
+    const name = merged.customerName ?? '';
+
+    const rule = this.bookingRules.validate(merged.checkIn, merged.checkOut);
+    if (!rule.pass) {
+      switch (rule.reason) {
+        case 'year_2026_redirect':
+          await this.reply(from, 'year_2026_redirect', { name });
+          return;
+        case 'not_sunday':
+          await this.reply(from, 'dates_not_sunday_to_sunday', {
+            name,
+            suggested_check_in: this.formatDate(new Date(rule.suggestedCheckIn)),
+            suggested_check_out: this.formatDate(
+              new Date(rule.suggestedCheckOut),
+            ),
+          });
+          return;
+        case 'min_stay':
+          await this.reply(from, 'minimum_stay_not_met', {
+            name,
+            suggested_check_in: this.formatDate(new Date(rule.suggestedCheckIn)),
+            suggested_check_out: this.formatDate(
+              new Date(rule.suggestedCheckOut),
+            ),
+          });
+          return;
+        case 'long_stay_manual':
+          await this.handoff(from, '', 'long_stay_manual_pricing', { name });
+          return;
+      }
+    }
+
     const ok = await this.availability.isRangeAvailable(
       merged.checkIn,
       merged.checkOut,
     );
     if (!ok) {
       await this.reply(from, 'availability_no_handoff', {
-        checkIn: this.isoDate(merged.checkIn),
-        checkOut: this.isoDate(merged.checkOut),
+        name,
+        check_in: this.formatDate(merged.checkIn),
+        check_out: this.formatDate(merged.checkOut),
+        month: this.monthName(merged.checkIn),
       });
       return;
     }
 
     const quote = await this.pricing.calculate(merged.checkIn, merged.checkOut);
-    if (!quote.meetsMinNights) {
-      await this.reply(from, 'minimum_stay_not_met', {
-        minNights: quote.minNights,
-      });
-      return;
-    }
 
     await this.reply(
       from,
       'availability_yes_quote',
       {
+        name,
+        check_in: this.formatDate(merged.checkIn),
+        check_out: this.formatDate(merged.checkOut),
         nights: quote.nights,
-        total: quote.total,
-        guests: merged.guests ?? '',
-        checkIn: this.isoDate(merged.checkIn),
-        checkOut: this.isoDate(merged.checkOut),
+        price: this.formatPrice(quote.total),
       },
-      this.shouldAppendHarvest(merged.checkIn) ? 'september_wine_harvest_note' : undefined,
+      this.shouldAppendHarvest(merged.checkIn)
+        ? 'september_wine_harvest_note'
+        : undefined,
     );
   }
 
@@ -227,7 +272,7 @@ export class MessageHandlerService {
   private async reply(
     to: string,
     key: string,
-    vars: Record<string, string | number | boolean>,
+    vars: TemplateVars,
     appendKey?: string,
     options: { override?: boolean } = {},
   ): Promise<void> {
@@ -256,6 +301,7 @@ export class MessageHandlerService {
     from: string,
     originalText: string,
     templateKey: string,
+    vars: TemplateVars = {},
   ): Promise<void> {
     try {
       await this.conversation.setStatus(from, 'paused', {
@@ -269,7 +315,7 @@ export class MessageHandlerService {
     }
 
     try {
-      await this.reply(from, templateKey, {}, undefined, { override: true });
+      await this.reply(from, templateKey, vars, undefined, { override: true });
     } catch (err) {
       this.logger.error('conversation', 'failed to send handoff reply', {
         from,
@@ -330,6 +376,24 @@ export class MessageHandlerService {
 
   private isoDate(d: Date): string {
     return d.toISOString().slice(0, 10);
+  }
+
+  private formatDate(d: Date): string {
+    return d.toLocaleDateString('en-GB', {
+      weekday: 'long',
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+      timeZone: 'UTC',
+    });
+  }
+
+  private formatPrice(amount: number): string {
+    return `€${Math.round(amount).toLocaleString('en-GB')}`;
+  }
+
+  private monthName(d: Date): string {
+    return d.toLocaleDateString('en-GB', { month: 'long', timeZone: 'UTC' });
   }
 
   private shouldAppendHarvest(checkIn: Date): boolean {

@@ -37,6 +37,8 @@ const fullJson = (overrides: Record<string, unknown> = {}) => ({
   checkIn: null,
   checkOut: null,
   guests: null,
+  mentionsDiscount: false,
+  highIntentSignal: false,
   ...overrides,
 });
 
@@ -79,6 +81,8 @@ describe('ParserService', () => {
       checkIn: new Date('2026-06-15'),
       checkOut: new Date('2026-06-20'),
       guests: 2,
+      mentionsDiscount: false,
+      highIntentSignal: false,
     });
   });
 
@@ -139,6 +143,8 @@ describe('ParserService', () => {
       checkIn: null,
       checkOut: null,
       guests: null,
+      mentionsDiscount: false,
+      highIntentSignal: false,
     });
   });
 
@@ -225,5 +231,39 @@ describe('ParserService', () => {
     const out = await service.parse('hi');
 
     expect(out.intent).toBe('off_topic_or_unclear');
+  });
+
+  it('sets mentionsDiscount true when Claude returns true', async () => {
+    mockCreate.mockResolvedValue(
+      claudeResponse(fullJson({ mentionsDiscount: true })),
+    );
+    const service = new ParserService(makeConfig(), makeLogger());
+
+    const out = await service.parse('can I get a discount?');
+
+    expect(out.mentionsDiscount).toBe(true);
+  });
+
+  it('sets highIntentSignal true when Claude returns true', async () => {
+    mockCreate.mockResolvedValue(
+      claudeResponse(fullJson({ highIntentSignal: true })),
+    );
+    const service = new ParserService(makeConfig(), makeLogger());
+
+    const out = await service.parse("this looks perfect, we'd love to book");
+
+    expect(out.highIntentSignal).toBe(true);
+  });
+
+  it('defaults mentionsDiscount and highIntentSignal to false when absent', async () => {
+    mockCreate.mockResolvedValue(
+      claudeResponse({ intent: 'greeting', confidence: 0.9, customerName: null }),
+    );
+    const service = new ParserService(makeConfig(), makeLogger());
+
+    const out = await service.parse('hi');
+
+    expect(out.mentionsDiscount).toBe(false);
+    expect(out.highIntentSignal).toBe(false);
   });
 });

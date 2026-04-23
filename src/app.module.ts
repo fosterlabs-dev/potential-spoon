@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { AirtableModule } from './airtable/airtable.module';
 import { AvailabilityModule } from './availability/availability.module';
+import { BookingRulesModule } from './booking-rules/booking-rules.module';
 import { ConversationModule } from './conversation/conversation.module';
 import { LoggerModule } from './logger/logger.module';
 import { MessageLogModule } from './messagelog/messagelog.module';
@@ -17,6 +18,7 @@ import { WhatsappModule } from './whatsapp/whatsapp.module';
     LoggerModule,
     AirtableModule,
     AvailabilityModule,
+    BookingRulesModule,
     PricingModule,
     TemplatesModule,
     ParserModule,

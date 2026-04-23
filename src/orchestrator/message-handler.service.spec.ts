@@ -1,5 +1,6 @@
 import { ConfigService } from '@nestjs/config';
 import { AvailabilityService } from '../availability/availability.service';
+import { BookingRulesService, RulesValidation } from '../booking-rules/booking-rules.service';
 import { ConversationService } from '../conversation/conversation.service';
 import { LoggerService } from '../logger/logger.service';
 import { MessageLogService } from '../messagelog/messagelog.service';
@@ -27,6 +28,8 @@ const defaultParsed = (overrides: Partial<ParseResult> = {}): ParseResult => ({
   checkIn: null,
   checkOut: null,
   guests: null,
+  mentionsDiscount: false,
+  highIntentSignal: false,
   ...overrides,
 });
 
@@ -42,10 +45,10 @@ const makeAvailability = (available = true): AvailabilityService =>
 
 const makePricing = (
   quote: unknown = {
-    nights: 3,
+    nights: 7,
     nightlyBreakdown: [],
-    subtotal: 300,
-    total: 300,
+    subtotal: 2100,
+    total: 2100,
     minNights: 0,
     meetsMinNights: true,
   },
@@ -89,11 +92,19 @@ const makeMessageLog = (): MessageLogService =>
 const makeConfig = (owner: string | undefined = OWNER): ConfigService =>
   ({ get: () => owner }) as unknown as ConfigService;
 
+const makeBookingRules = (
+  result: RulesValidation = { pass: true },
+): BookingRulesService =>
+  ({
+    validate: jest.fn().mockReturnValue(result),
+  }) as unknown as BookingRulesService;
+
 const build = (
   over: {
     parser?: ParserService;
     availability?: AvailabilityService;
     pricing?: PricingService;
+    bookingRules?: BookingRulesService;
     templates?: TemplatesService;
     whatsapp?: WhatsappService;
     conversation?: ConversationService;
@@ -106,6 +117,7 @@ const build = (
     over.parser ?? makeParser(),
     over.availability ?? makeAvailability(),
     over.pricing ?? makePricing(),
+    over.bookingRules ?? makeBookingRules(),
     over.templates ?? makeTemplates(),
     over.whatsapp ?? makeWhatsapp(),
     over.conversation ?? makeConversation(),
@@ -113,6 +125,10 @@ const build = (
     over.logger ?? makeLogger(),
     over.config ?? makeConfig(),
   );
+
+// Sunday dates to satisfy booking rules in tests that reach availability/pricing
+const SUN_CHECK_IN = new Date('2025-07-06');
+const SUN_CHECK_OUT = new Date('2025-07-13');
 
 describe('MessageHandlerService.handle — inbound logging', () => {
   it('logs every incoming message to MessageLog', async () => {
@@ -274,35 +290,33 @@ describe('MessageHandlerService.handle — pause gate', () => {
 });
 
 describe('MessageHandlerService.handle — availability flow', () => {
-  it('renders availability_yes_quote when dates are free and min nights met', async () => {
+  it('renders availability_yes_quote when dates are free', async () => {
     const parser = makeParser({
       intent: 'availability_inquiry',
-      checkIn: new Date('2026-06-15'),
-      checkOut: new Date('2026-06-18'),
-      guests: 2,
+      checkIn: SUN_CHECK_IN,
+      checkOut: SUN_CHECK_OUT,
     });
     const templates = makeTemplates('booked');
     const handler = build({ parser, templates });
 
-    await handler.handle({ from: CUSTOMER, text: 'is 15-18 jun free for 2?' });
+    await handler.handle({ from: CUSTOMER, text: 'is Jul 6-13 free?' });
 
     expect(templates.render).toHaveBeenCalledWith(
       'availability_yes_quote',
-      expect.objectContaining({ nights: 3, total: 300, guests: 2 }),
+      expect.objectContaining({ nights: 7, price: '€2,100' }),
     );
   });
 
   it('appends the September wine-harvest note when check-in falls in September', async () => {
     const parser = makeParser({
       intent: 'availability_inquiry',
-      checkIn: new Date('2026-09-10'),
-      checkOut: new Date('2026-09-15'),
-      guests: 2,
+      checkIn: new Date('2025-09-07'),
+      checkOut: new Date('2025-09-14'),
     });
     const templates = makeTemplates('rendered');
     const handler = build({ parser, templates });
 
-    await handler.handle({ from: CUSTOMER, text: '10-15 sep?' });
+    await handler.handle({ from: CUSTOMER, text: '7-14 sep?' });
 
     const calls = (templates.render as jest.Mock).mock.calls.map(
       (c) => c[0] as string,
@@ -311,48 +325,21 @@ describe('MessageHandlerService.handle — availability flow', () => {
     expect(calls).toContain('september_wine_harvest_note');
   });
 
-  it('renders minimum_stay_not_met when the quote falls below minNights', async () => {
-    const parser = makeParser({
-      intent: 'availability_inquiry',
-      checkIn: new Date('2026-06-15'),
-      checkOut: new Date('2026-06-17'),
-      guests: 2,
-    });
-    const pricing = makePricing({
-      nights: 2,
-      nightlyBreakdown: [],
-      subtotal: 200,
-      total: 200,
-      minNights: 7,
-      meetsMinNights: false,
-    });
-    const templates = makeTemplates('too short');
-    const handler = build({ parser, pricing, templates });
-
-    await handler.handle({ from: CUSTOMER, text: '15-17 jun?' });
-
-    expect(templates.render).toHaveBeenCalledWith(
-      'minimum_stay_not_met',
-      expect.objectContaining({ minNights: 7 }),
-    );
-  });
-
   it('renders availability_no_handoff when dates are taken', async () => {
     const parser = makeParser({
       intent: 'availability_inquiry',
-      checkIn: new Date('2026-06-15'),
-      checkOut: new Date('2026-06-18'),
-      guests: 2,
+      checkIn: SUN_CHECK_IN,
+      checkOut: SUN_CHECK_OUT,
     });
     const availability = makeAvailability(false);
     const templates = makeTemplates('taken');
     const handler = build({ parser, availability, templates });
 
-    await handler.handle({ from: CUSTOMER, text: 'is 15-18 jun free?' });
+    await handler.handle({ from: CUSTOMER, text: 'is Jul 6-13 free?' });
 
     expect(templates.render).toHaveBeenCalledWith(
       'availability_no_handoff',
-      expect.any(Object),
+      expect.objectContaining({ check_in: expect.any(String), check_out: expect.any(String), month: expect.any(String) }),
     );
   });
 
@@ -383,8 +370,8 @@ describe('MessageHandlerService.handle — availability flow', () => {
         status: 'bot',
         lastIntent: 'availability_inquiry',
         pendingDates: {
-          checkIn: '2026-06-15',
-          checkOut: '2026-06-18',
+          checkIn: '2025-07-06',
+          checkOut: '2025-07-13',
           guests: 2,
         },
         customerName: null,
@@ -400,7 +387,155 @@ describe('MessageHandlerService.handle — availability flow', () => {
     );
     const [checkInArg] = (availability.isRangeAvailable as jest.Mock).mock
       .calls[0];
-    expect((checkInArg as Date).toISOString()).toContain('2026-06-15');
+    expect((checkInArg as Date).toISOString()).toContain('2025-07-06');
+  });
+});
+
+describe('MessageHandlerService.handle — booking rules', () => {
+  it('renders year_2026_redirect when booking rules block with that reason', async () => {
+    const parser = makeParser({
+      intent: 'availability_inquiry',
+      checkIn: SUN_CHECK_IN,
+      checkOut: SUN_CHECK_OUT,
+    });
+    const bookingRules = makeBookingRules({
+      pass: false,
+      reason: 'year_2026_redirect',
+    });
+    const templates = makeTemplates();
+    const handler = build({ parser, bookingRules, templates });
+
+    await handler.handle({ from: CUSTOMER, text: 'available in 2026?' });
+
+    expect(templates.render).toHaveBeenCalledWith(
+      'year_2026_redirect',
+      expect.any(Object),
+    );
+  });
+
+  it('renders dates_not_sunday_to_sunday with suggested dates when check-in is not a Sunday', async () => {
+    const parser = makeParser({
+      intent: 'availability_inquiry',
+      checkIn: new Date('2025-07-07'), // Monday
+      checkOut: new Date('2025-07-13'),
+    });
+    const bookingRules = makeBookingRules({
+      pass: false,
+      reason: 'not_sunday',
+      suggestedCheckIn: '2025-07-13',
+      suggestedCheckOut: '2025-07-20',
+    });
+    const templates = makeTemplates();
+    const handler = build({ parser, bookingRules, templates });
+
+    await handler.handle({ from: CUSTOMER, text: 'Jul 7-13?' });
+
+    expect(templates.render).toHaveBeenCalledWith(
+      'dates_not_sunday_to_sunday',
+      expect.objectContaining({
+        suggested_check_in: expect.any(String),
+        suggested_check_out: expect.any(String),
+      }),
+    );
+  });
+
+  it('renders minimum_stay_not_met with suggested dates when stay is too short', async () => {
+    const parser = makeParser({
+      intent: 'availability_inquiry',
+      checkIn: SUN_CHECK_IN,
+      checkOut: SUN_CHECK_IN, // same day
+    });
+    const bookingRules = makeBookingRules({
+      pass: false,
+      reason: 'min_stay',
+      suggestedCheckIn: '2025-07-06',
+      suggestedCheckOut: '2025-07-13',
+    });
+    const templates = makeTemplates();
+    const handler = build({ parser, bookingRules, templates });
+
+    await handler.handle({ from: CUSTOMER, text: 'just one night?' });
+
+    expect(templates.render).toHaveBeenCalledWith(
+      'minimum_stay_not_met',
+      expect.objectContaining({
+        suggested_check_in: expect.any(String),
+        suggested_check_out: expect.any(String),
+      }),
+    );
+  });
+
+  it('hands off via long_stay_manual_pricing and pauses when Oct-May long stay detected', async () => {
+    const parser = makeParser({
+      intent: 'availability_inquiry',
+      checkIn: new Date('2025-11-02'),
+      checkOut: new Date('2025-11-30'),
+    });
+    const bookingRules = makeBookingRules({
+      pass: false,
+      reason: 'long_stay_manual',
+    });
+    const templates = makeTemplates();
+    const conversation = makeConversation();
+    const handler = build({ parser, bookingRules, templates, conversation });
+
+    await handler.handle({ from: CUSTOMER, text: 'can I rent for November?' });
+
+    expect(templates.render).toHaveBeenCalledWith(
+      'long_stay_manual_pricing',
+      expect.any(Object),
+    );
+    expect(conversation.setStatus).toHaveBeenCalledWith(CUSTOMER, 'paused', {
+      pauseForMinutes: 60,
+    });
+  });
+});
+
+describe('MessageHandlerService.handle — discount detection', () => {
+  it('intercepts discount requests before normal routing and hands off to Jim', async () => {
+    const parser = makeParser({
+      intent: 'pricing_inquiry',
+      mentionsDiscount: true,
+      checkIn: SUN_CHECK_IN,
+      checkOut: SUN_CHECK_OUT,
+    });
+    const templates = makeTemplates();
+    const conversation = makeConversation();
+    const whatsapp = makeWhatsapp();
+    const handler = build({ parser, templates, conversation, whatsapp });
+
+    await handler.handle({ from: CUSTOMER, text: 'can I get a better rate?' });
+
+    expect(templates.render).toHaveBeenCalledWith(
+      'discount_request',
+      expect.any(Object),
+    );
+    expect(conversation.setStatus).toHaveBeenCalledWith(CUSTOMER, 'paused', {
+      pauseForMinutes: 60,
+    });
+    expect(whatsapp.sendMessage).toHaveBeenCalledWith(
+      OWNER,
+      expect.any(String),
+      { override: true },
+    );
+  });
+
+  it('does not intercept normal pricing inquiry without discount flag', async () => {
+    const parser = makeParser({
+      intent: 'pricing_inquiry',
+      mentionsDiscount: false,
+      checkIn: SUN_CHECK_IN,
+      checkOut: SUN_CHECK_OUT,
+    });
+    const templates = makeTemplates();
+    const handler = build({ parser, templates });
+
+    await handler.handle({ from: CUSTOMER, text: 'how much for Jul?' });
+
+    const calledKeys = (templates.render as jest.Mock).mock.calls.map(
+      (c) => c[0],
+    );
+    expect(calledKeys).not.toContain('discount_request');
   });
 });
 
@@ -418,7 +553,7 @@ describe('MessageHandlerService.handle — other intents', () => {
     );
   });
 
-  it('pricing_inquiry without dates asks for them', async () => {
+  it('pricing_inquiry without dates asks for clarification', async () => {
     const parser = makeParser({ intent: 'pricing_inquiry' });
     const templates = makeTemplates();
     const handler = build({ parser, templates });
@@ -426,7 +561,7 @@ describe('MessageHandlerService.handle — other intents', () => {
     await handler.handle({ from: CUSTOMER, text: 'how much?' });
 
     expect(templates.render).toHaveBeenCalledWith(
-      'pricing_needs_dates',
+      'dates_unclear_ask_clarify',
       expect.any(Object),
     );
   });
@@ -514,9 +649,8 @@ describe('MessageHandlerService.handle — fail-safe paths', () => {
   it('falls back to unclear_handoff when a downstream service throws', async () => {
     const parser = makeParser({
       intent: 'availability_inquiry',
-      checkIn: new Date('2026-06-15'),
-      checkOut: new Date('2026-06-18'),
-      guests: 2,
+      checkIn: SUN_CHECK_IN,
+      checkOut: SUN_CHECK_OUT,
     });
     const availability = {
       isRangeAvailable: jest.fn().mockRejectedValue(new Error('ical down')),
@@ -534,7 +668,7 @@ describe('MessageHandlerService.handle — fail-safe paths', () => {
       logger,
     });
 
-    await handler.handle({ from: CUSTOMER, text: 'is 15-18 jun free?' });
+    await handler.handle({ from: CUSTOMER, text: 'is Jul 6-13 free?' });
 
     expect(templates.render).toHaveBeenCalledWith(
       'unclear_handoff',
@@ -557,14 +691,14 @@ describe('MessageHandlerService.handle — context persistence', () => {
     const parser = makeParser({
       intent: 'availability_inquiry',
       customerName: 'Maria',
-      checkIn: new Date('2026-06-15'),
-      checkOut: new Date('2026-06-18'),
+      checkIn: SUN_CHECK_IN,
+      checkOut: SUN_CHECK_OUT,
       guests: 2,
     });
     const conversation = makeConversation();
     const handler = build({ parser, conversation });
 
-    await handler.handle({ from: CUSTOMER, text: "I'm Maria, 15-18 jun" });
+    await handler.handle({ from: CUSTOMER, text: "I'm Maria, Jul 6-13" });
 
     expect(conversation.updateContext).toHaveBeenCalledWith(
       CUSTOMER,
@@ -572,8 +706,8 @@ describe('MessageHandlerService.handle — context persistence', () => {
         lastIntent: 'availability_inquiry',
         customerName: 'Maria',
         pendingDates: expect.objectContaining({
-          checkIn: '2026-06-15',
-          checkOut: '2026-06-18',
+          checkIn: '2025-07-06',
+          checkOut: '2025-07-13',
           guests: 2,
         }),
       }),

@@ -21,7 +21,7 @@ const TEMPLATES: TemplateRow[] = [
   {
     key: 'greeting_ask_dates',
     variant: 1,
-    text: `Hi {name}, thanks for getting in touch about Bonté Maison.\n\nTo check availability and send pricing, could you let me know the dates you're thinking of? (Sunday to Sunday works best — the house runs on Sunday changeovers.)\n\nThere's loads of information on the website too if you'd like a browse: www.bontemaison.com\n\nThanks`,
+    text: `Hi {name}, thanks for getting in touch about Bonté Maison.\n\nTo check availability and send pricing, could you let me know the dates you're thinking of? Sunday to Sunday works best — the house runs on Sunday changeovers.\n\nThere's loads of information on the website too if you'd like a browse in the meantime: www.bontemaison.com\n\nLooking forward to hearing from you.`,
   },
   {
     key: 'greeting_ask_dates',
@@ -38,7 +38,7 @@ const TEMPLATES: TemplateRow[] = [
   {
     key: 'dates_unclear_ask_clarify',
     variant: 1,
-    text: `Thanks {name} — just to make sure I quote the right week, could you share the specific dates? For example: "9th to 16th August".\n\nAs we run Sunday to Sunday, any week in that window should work well.\n\nThanks`,
+    text: `Thanks {name} — just to make sure I quote the right week, could you share the specific dates? For example: "9th to 16th August".\n\nWe run Sunday to Sunday, so any week in that window should work well. Once I have the exact dates I'll come back with availability and pricing.`,
   },
   {
     key: 'dates_unclear_ask_clarify',
@@ -226,7 +226,7 @@ const TEMPLATES: TemplateRow[] = [
   {
     key: 'faq_pool_heated',
     variant: 1,
-    text: `Hi {name},\n\nThe pool isn't heated — it's warmed naturally by the sun, which works really well here.\n\nFrom around June through to September it sits at a really lovely temperature, and guests tend to spend most of the day in and around it.\n\nIt's one of those pools that just feels right for the setting — especially with the views and long summer days.\n\nMany thanks`,
+    text: `Hi {name},\n\nThe pool isn't heated — it's warmed naturally by the sun, which works really well here.\n\nFrom around June through to September it sits at a really lovely temperature, and guests tend to spend most of the day in and around it.\n\nIt's one of those pools that just feels right for the setting — especially with the views and long summer days.\n\nIf you'd like to share your dates, I'm happy to check availability for you.\n\nMany thanks`,
   },
   {
     key: 'faq_sleeps',
@@ -236,17 +236,17 @@ const TEMPLATES: TemplateRow[] = [
   {
     key: 'faq_car_needed',
     variant: 1,
-    text: `Hi {name},\n\nYes, I would definitely recommend having a car.\n\nThe house is in a lovely, peaceful setting surrounded by countryside and vineyards, which is part of what makes it so special, but it does mean you'll want a car to explore properly.\n\nThere are some fantastic local towns, markets and restaurants nearby, all within a short drive.\n\nMany thanks`,
+    text: `Hi {name},\n\nYes, I would definitely recommend having a car.\n\nThe house is in a lovely, peaceful setting surrounded by countryside and vineyards, which is part of what makes it so special, but it does mean you'll want a car to explore properly.\n\nThere are some fantastic local towns, markets and restaurants nearby, all within a short drive.\n\nHappy to check availability if you'd like to share your dates.\n\nMany thanks`,
   },
   {
     key: 'faq_ev_charger',
     variant: 1,
-    text: `Hi {name},\n\nThere isn't an EV charger at the house itself.\n\nHowever, there are charging points available locally in the nearby towns, so it's still very manageable if you're travelling with an electric car. The nearest is at 80 Avenue de la Résistance, 33220 Pineuilh (about 10 minutes' drive).\n\nMany thanks`,
+    text: `Hi {name},\n\nThere isn't an EV charger at the house itself.\n\nHowever, there are charging points available locally in the nearby towns, so it's still very manageable if you're travelling with an electric car. The nearest is at 80 Avenue de la Résistance, 33220 Pineuilh (about 10 minutes' drive).\n\nIf you have any other questions or would like to check availability, just let me know.\n\nMany thanks`,
   },
   {
     key: 'faq_pool_towels',
     variant: 1,
-    text: `Hi {name},\n\nYes — all towels are provided, including pool towels.\n\nEverything is set up so you can arrive and settle in straight away.\n\nMany thanks`,
+    text: `Hi {name},\n\nYes — all towels are provided, including pool towels.\n\nEverything is set up so you can arrive and settle in straight away. If you'd like to check availability for your dates, happy to do that.\n\nMany thanks`,
   },
   {
     key: 'faq_nearest_shops',
@@ -256,12 +256,12 @@ const TEMPLATES: TemplateRow[] = [
   {
     key: 'faq_cot_highchair',
     variant: 1,
-    text: `Hi {name},\n\nYes — there are two cots and two highchairs at the house.\n\nIt's very well set up for families, so you shouldn't need to bring those with you.\n\nMany thanks`,
+    text: `Hi {name},\n\nYes — there are two cots and two highchairs at the house.\n\nIt's very well set up for families, so you shouldn't need to bring those with you. Happy to check availability if you'd like to share your dates.\n\nMany thanks`,
   },
   {
     key: 'faq_dogs',
     variant: 1,
-    text: `Hi {name},\n\nYes — dogs are very welcome, no limit.\n\nThe house works really nicely for them as well, with plenty of outdoor space and walks nearby.\n\nMany thanks`,
+    text: `Hi {name},\n\nYes — dogs are very welcome, no limit.\n\nThe house works really nicely for them — plenty of outdoor space and walks nearby.\n\nIf you'd like to share your dates, I'm happy to check availability.\n\nMany thanks`,
   },
   {
     key: 'faq_check_in_out_times',
@@ -271,7 +271,7 @@ const TEMPLATES: TemplateRow[] = [
   {
     key: 'faq_location',
     variant: 1,
-    text: `Hi {name},\n\nBonté Maison is near Duras in south-west France — between Bordeaux and Bergerac, right in the middle of wine country.\n\nIt's a quiet, private spot surrounded by vineyards, with some fantastic medieval towns nearby: Eymet, Duras and Bergerac are all close. It's a great base for exploring the Dordogne.\n\nMany thanks`,
+    text: `Hi {name},\n\nBonté Maison is near Duras in south-west France — between Bordeaux and Bergerac, right in the middle of wine country.\n\nIt's a quiet, private spot surrounded by vineyards, with some fantastic medieval towns nearby: Eymet, Duras and Bergerac are all close. It's a great base for exploring the Dordogne.\n\nHappy to check availability if you have dates in mind — just let me know.\n\nMany thanks`,
   },
   {
     key: 'faq_unknown_handoff',

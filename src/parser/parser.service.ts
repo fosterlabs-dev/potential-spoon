@@ -25,6 +25,8 @@ export type ParseResult = {
   checkIn: Date | null;
   checkOut: Date | null;
   guests: number | null;
+  mentionsDiscount: boolean;
+  highIntentSignal: boolean;
 };
 
 const SYSTEM_PROMPT = `You parse short WhatsApp messages from prospective guests of a rental property into structured data.
@@ -44,6 +46,8 @@ Return ONLY a JSON object with these keys (no prose, no code fences):
 - checkIn: ISO date "YYYY-MM-DD" or null
 - checkOut: ISO date "YYYY-MM-DD" or null (exclusive — the guest's departure date)
 - guests: integer or null
+- mentionsDiscount: true if the guest asks for a discount, special rate, or tries to negotiate the price
+- highIntentSignal: true if the message suggests readiness to book (e.g. "this looks great", multiple questions, "we'd like to come", expressing enthusiasm, asking about payment or deposits)
 
 Rules:
 - Use the recent conversation history (if provided) to disambiguate references like "those dates" or "yes".
@@ -58,6 +62,8 @@ const UNKNOWN: ParseResult = {
   checkIn: null,
   checkOut: null,
   guests: null,
+  mentionsDiscount: false,
+  highIntentSignal: false,
 };
 
 const VALID_INTENTS: readonly Intent[] = [
@@ -157,8 +163,19 @@ export class ParserService {
     const checkIn = this.toDate(p.checkIn);
     const checkOut = this.toDate(p.checkOut);
     const guests = typeof p.guests === 'number' ? p.guests : null;
+    const mentionsDiscount = p.mentionsDiscount === true;
+    const highIntentSignal = p.highIntentSignal === true;
 
-    return { intent, confidence, customerName, checkIn, checkOut, guests };
+    return {
+      intent,
+      confidence,
+      customerName,
+      checkIn,
+      checkOut,
+      guests,
+      mentionsDiscount,
+      highIntentSignal,
+    };
   }
 
   private toDate(value: unknown): Date | null {
