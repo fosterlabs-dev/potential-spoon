@@ -2,7 +2,9 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Anthropic from '@anthropic-ai/sdk';
 import { LoggerService } from '../logger/logger.service';
-import { TemplatesService } from '../templates/templates.service';
+import { TemplatesService, TemplateVars } from '../templates/templates.service';
+
+export type { TemplateVars };
 
 const SCENARIO_LABELS: Record<string, string> = {
   greeting_ask_dates: 'Guest made first contact without providing dates — ask for their dates politely',
@@ -78,14 +80,14 @@ export class ResponseService {
     }
   }
 
-  async render(key: string): Promise<string> {
+  async render(key: string, vars: TemplateVars): Promise<string> {
     if (this.mode === 'generate' && this.client) {
-      return this.generate(key);
+      return this.generate(key, vars);
     }
-    return this.templates.render(key);
+    return this.templates.render(key, vars);
   }
 
-  private async generate(key: string): Promise<string> {
+  private async generate(key: string, vars: TemplateVars): Promise<string> {
     let examples: string[] = [];
     try {
       examples = await this.templates.fetchRaw(key);
@@ -93,7 +95,7 @@ export class ResponseService {
       // style examples are best-effort
     }
 
-    const prompt = this.buildPrompt(key, examples);
+    const prompt = this.buildPrompt(key, vars, examples);
 
     try {
       const response = await this.client!.messages.create({
@@ -112,11 +114,15 @@ export class ResponseService {
         key,
         error: (err as Error).message,
       });
-      return this.templates.render(key);
+      return this.templates.render(key, vars);
     }
   }
 
-  private buildPrompt(key: string, examples: string[]): string {
+  private buildPrompt(
+    key: string,
+    vars: TemplateVars,
+    examples: string[],
+  ): string {
     const parts: string[] = [];
 
     if (examples.length > 0) {
@@ -131,6 +137,14 @@ export class ResponseService {
 
     const scenario = SCENARIO_LABELS[key] ?? `Handle scenario: ${key}`;
     parts.push(`Scenario: ${scenario}`);
+
+    const facts = Object.entries(vars)
+      .filter(([, v]) => v !== '' && v !== null && v !== undefined)
+      .map(([k, v]) => `- ${k}: ${String(v)}`)
+      .join('\n');
+    if (facts) {
+      parts.push(`Facts for your reply (include all of these):\n${facts}`);
+    }
 
     parts.push('Write Jim\'s WhatsApp reply. Plain text only.');
 

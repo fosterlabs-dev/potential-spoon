@@ -8,6 +8,10 @@ type TemplateFields = {
   text?: string;
 };
 
+export type TemplateVars = Record<string, string | number | boolean>;
+
+const PLACEHOLDER = /\{(\w+)\}/g;
+
 @Injectable()
 export class TemplatesService {
   private readonly counters = new Map<string, number>();
@@ -27,7 +31,7 @@ export class TemplatesService {
       .map((r) => r.fields.text as string);
   }
 
-  async render(key: string): Promise<string> {
+  async render(key: string, vars: TemplateVars): Promise<string> {
     const rows = await this.airtable.list<TemplateFields>('Templates', {
       filterByFormula: `{key}='${key}'`,
     });
@@ -44,6 +48,25 @@ export class TemplatesService {
     const chosen = variants[idx % variants.length];
     this.counters.set(key, idx + 1);
 
-    return chosen.fields.text as string;
+    return this.substitute(chosen.fields.text as string, vars, key);
+  }
+
+  private substitute(
+    text: string,
+    vars: TemplateVars,
+    key: string,
+  ): string {
+    return text.replace(PLACEHOLDER, (_match, name: string) => {
+      if (!(name in vars)) {
+        this.logger.error('templates', 'missing placeholder value', {
+          key,
+          placeholder: name,
+        });
+        throw new Error(
+          `missing placeholder "${name}" for template "${key}"`,
+        );
+      }
+      return String(vars[name]);
+    });
   }
 }
