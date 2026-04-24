@@ -54,6 +54,7 @@ src/
 ├── availability/      # iCal fetching + parsing, date range checks
 ├── pricing/           # Seasonal pricing bands, quote calculation, long-stay detection
 ├── templates/         # Airtable template fetching, variable substitution, variant rotation
+├── knowledge-base/    # Property-fact FAQs (pool, sleeps, location, etc.) — answered by bot, not handed off
 ├── conversation/      # Conversation state, handoff logic, command parsing
 ├── holds/             # 🔴 5-day hold system + expiry scheduler
 ├── follow-ups/        # 🔴 24h + 7d follow-up sequences
@@ -96,6 +97,7 @@ Colors:
 - `email-integration` → bright magenta
 - `notifications` → bright green
 - `booking-rules` → bright cyan
+- `knowledge-base` → bright yellow
 - `airtable` → gray
 - `error` → red (overrides)
 
@@ -229,6 +231,13 @@ Write failing test → minimal code → refactor → move on.
 - `hold_expires_at` (datetime — hold_created_at + 5 days)
 - `reminder_sent` (checkbox)
 - `status` (enum: `active | expired | converted | cancelled`)
+
+### `KnowledgeBase`
+Property-fact FAQs. Bot answers directly (no handoff) when parser classifies `general_info` into one of these `topic_key`s with confidence ≥ 0.7.
+- `topic_key` (string, e.g. `pool_heated`, `sleeps`, `location`)
+- `question_examples` (long text — comma-separated phrasings for parser prompt)
+- `answer` (long text, supports `{name}` placeholder)
+- `active` (checkbox)
 
 ### `MessageLog`
 - `phone`

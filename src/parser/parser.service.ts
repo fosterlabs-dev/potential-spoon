@@ -27,6 +27,12 @@ export type ParseResult = {
   guests: number | null;
   mentionsDiscount: boolean;
   highIntentSignal: boolean;
+  kbTopic: string | null;
+};
+
+export type KbTopicHint = {
+  topicKey: string;
+  questionExamples: string;
 };
 
 const SYSTEM_PROMPT = `You parse short WhatsApp messages from prospective guests of a rental property into structured data.
@@ -42,12 +48,13 @@ Return ONLY a JSON object with these keys (no prose, no code fences):
   - "complaint_or_frustration" — is upset, frustrated, complaining, or expressing dissatisfaction
   - "off_topic_or_unclear" — anything else you cannot classify confidently
 - confidence: number from 0 to 1 indicating how confident you are in the intent classification
-- customerName: the guest's name if they introduced themselves (e.g. "Hi I'm Maria"), otherwise null
+- customerName: the guest's name if they introduced themselves (e.g. "HiI'm Maria"), otherwise null
 - checkIn: ISO date "YYYY-MM-DD" or null
 - checkOut: ISO date "YYYY-MM-DD" or null (exclusive — the guest's departure date)
 - guests: integer or null
 - mentionsDiscount: true if the guest asks for a discount, special rate, or tries to negotiate the price
 - highIntentSignal: true if the message suggests readiness to book (e.g. "this looks great", multiple questions, "we'd like to come", expressing enthusiasm, asking about payment or deposits)
+- kbTopic: when intent is "general_info", classify the question into ONE of the knowledge base topic keys listed below (exact match). Return null if none fits confidently, or if the intent is not "general_info".
 
 Rules:
 - Use the recent conversation history (if provided) to disambiguate references like "those dates" or "yes".
@@ -65,6 +72,7 @@ const UNKNOWN: ParseResult = {
   guests: null,
   mentionsDiscount: false,
   highIntentSignal: false,
+  kbTopic: null,
 };
 
 const VALID_INTENTS: readonly Intent[] = [
@@ -97,15 +105,17 @@ export class ParserService {
   async parse(
     message: string,
     history: HistoryMessage[] = [],
+    kbTopics: KbTopicHint[] = [],
   ): Promise<ParseResult> {
     const userContent = this.buildUserContent(message, history);
+    const system = this.buildSystemPrompt(kbTopics);
 
     let raw: string;
     try {
       const response = await this.client.messages.create({
         model: this.model,
         max_tokens: 512,
-        system: SYSTEM_PROMPT,
+        system,
         messages: [{ role: 'user', content: userContent }],
       });
       const block = response.content[0];
@@ -118,6 +128,15 @@ export class ParserService {
     }
 
     return this.coerce(raw, message);
+  }
+
+  private buildSystemPrompt(kbTopics: KbTopicHint[]): string {
+    if (kbTopics.length === 0) return SYSTEM_PROMPT;
+    const lines = kbTopics.map(
+      (t) =>
+        `- ${t.topicKey}${t.questionExamples ? ` — ${t.questionExamples}` : ''}`,
+    );
+    return `${SYSTEM_PROMPT}\n\nKnowledge base topics (use exact key for kbTopic):\n${lines.join('\n')}`;
   }
 
   private buildUserContent(
@@ -168,6 +187,10 @@ export class ParserService {
     const guests = typeof p.guests === 'number' ? p.guests : null;
     const mentionsDiscount = p.mentionsDiscount === true;
     const highIntentSignal = p.highIntentSignal === true;
+    const kbTopic =
+      typeof p.kbTopic === 'string' && p.kbTopic.trim().length > 0
+        ? p.kbTopic.trim()
+        : null;
 
     return {
       intent,
@@ -178,6 +201,7 @@ export class ParserService {
       guests,
       mentionsDiscount,
       highIntentSignal,
+      kbTopic,
     };
   }
 

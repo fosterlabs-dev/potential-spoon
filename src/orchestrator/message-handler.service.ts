@@ -7,16 +7,18 @@ import {
   ParsedCommand,
   PendingDates,
 } from '../conversation/conversation.service';
+import { KnowledgeBaseService } from '../knowledge-base/knowledge-base.service';
 import { LoggerService } from '../logger/logger.service';
 import { MessageLogService } from '../messagelog/messagelog.service';
 import { Intent, ParserService } from '../parser/parser.service';
 import { PricingService } from '../pricing/pricing.service';
-import { ResponseService, TemplateVars } from '../response/response.service';
+import { ResponseService } from '../response/response.service';
 import { WhatsappService } from '../whatsapp/whatsapp.service';
 
 const PAUSE_ON_HANDOFF_MIN = 60;
 const HISTORY_LIMIT = 6;
 const SEPTEMBER = 8; // UTC month index
+const KB_CONFIDENCE_THRESHOLD = 0.7;
 
 type IncomingMessage = { from: string; text: string };
 
@@ -40,6 +42,7 @@ export class MessageHandlerService {
     private readonly whatsapp: WhatsappService,
     private readonly conversation: ConversationService,
     private readonly messageLog: MessageLogService,
+    private readonly knowledgeBase: KnowledgeBaseService,
     private readonly logger: LoggerService,
     config: ConfigService,
   ) {
@@ -74,7 +77,8 @@ export class MessageHandlerService {
 
     try {
       const history = await this.messageLog.recent(msg.from, HISTORY_LIMIT);
-      const parsed = await this.parser.parse(msg.text, history);
+      const kbTopics = await this.fetchKbTopicsSafe();
+      const parsed = await this.parser.parse(msg.text, history, kbTopics);
       const merged = this.mergeWithPending(
         {
           checkIn: parsed.checkIn,
@@ -93,21 +97,20 @@ export class MessageHandlerService {
       });
 
       if (parsed.mentionsDiscount) {
-        await this.handoff(msg.from, msg.text, 'discount_request', {
-          name: merged.customerName ?? '',
-        });
+        await this.handoff(msg.from, msg.text, 'discount_request');
         return;
       }
 
-      await this.route(msg.from, parsed.intent, merged);
+      await this.route(msg.from, parsed.intent, merged, {
+        kbTopic: parsed.kbTopic,
+        confidence: parsed.confidence,
+      });
     } catch (err) {
       this.logger.error('conversation', 'message handling failed', {
         from: msg.from,
         error: (err as Error).message,
       });
-      await this.handoff(msg.from, msg.text, 'unclear_handoff', {
-        name: storedName ?? '',
-      });
+      await this.handoff(msg.from, msg.text, 'unclear_handoff');
     }
   }
 
@@ -115,21 +118,20 @@ export class MessageHandlerService {
     from: string,
     intent: Intent,
     merged: MergedIntent,
+    kb: { kbTopic: string | null; confidence: number },
   ): Promise<void> {
-    const name = merged.customerName ?? '';
-
     switch (intent) {
       case 'greeting':
         if (merged.checkIn && merged.checkOut) {
           await this.handleAvailability(from, merged);
           return;
         }
-        await this.reply(from, 'greeting_ask_dates', { name });
+        await this.reply(from, 'greeting_ask_dates');
         return;
 
       case 'availability_inquiry':
         if (!merged.checkIn || !merged.checkOut) {
-          await this.reply(from, 'dates_unclear_ask_clarify', { name });
+          await this.reply(from, 'dates_unclear_ask_clarify');
           return;
         }
         await this.handleAvailability(from, merged);
@@ -137,31 +139,31 @@ export class MessageHandlerService {
 
       case 'pricing_inquiry':
         if (!merged.checkIn || !merged.checkOut) {
-          await this.reply(from, 'dates_unclear_ask_clarify', { name });
+          await this.reply(from, 'dates_unclear_ask_clarify');
           return;
         }
         await this.handleAvailability(from, merged);
         return;
 
       case 'general_info':
-        await this.handoff(from, '', 'faq_unknown_handoff', { name });
+        await this.handleGeneralInfo(from, kb);
         return;
 
       case 'booking_confirmation':
-        await this.handoff(from, '', 'booking_confirmed_handoff', { name });
+        await this.handoff(from, '', 'booking_confirmed_handoff');
         return;
 
       case 'human_request':
-        await this.handoff(from, '', 'human_request_handoff', { name });
+        await this.handoff(from, '', 'human_request_handoff');
         return;
 
       case 'complaint_or_frustration':
-        await this.handoff(from, '', 'complaint_handoff', { name });
+        await this.handoff(from, '', 'complaint_handoff');
         return;
 
       case 'off_topic_or_unclear':
       default:
-        await this.handoff(from, '', 'unclear_handoff', { name });
+        await this.handoff(from, '', 'unclear_handoff');
         return;
     }
   }
@@ -172,34 +174,20 @@ export class MessageHandlerService {
   ): Promise<void> {
     if (!merged.checkIn || !merged.checkOut) return;
 
-    const name = merged.customerName ?? '';
-
     const rule = this.bookingRules.validate(merged.checkIn, merged.checkOut);
     if (!rule.pass) {
       switch (rule.reason) {
         case 'year_2026_redirect':
-          await this.reply(from, 'year_2026_redirect', { name });
+          await this.reply(from, 'year_2026_redirect');
           return;
         case 'not_sunday':
-          await this.reply(from, 'dates_not_sunday_to_sunday', {
-            name,
-            suggested_check_in: this.formatDate(new Date(rule.suggestedCheckIn)),
-            suggested_check_out: this.formatDate(
-              new Date(rule.suggestedCheckOut),
-            ),
-          });
+          await this.reply(from, 'dates_not_sunday_to_sunday');
           return;
         case 'min_stay':
-          await this.reply(from, 'minimum_stay_not_met', {
-            name,
-            suggested_check_in: this.formatDate(new Date(rule.suggestedCheckIn)),
-            suggested_check_out: this.formatDate(
-              new Date(rule.suggestedCheckOut),
-            ),
-          });
+          await this.reply(from, 'minimum_stay_not_met');
           return;
         case 'long_stay_manual':
-          await this.handoff(from, '', 'long_stay_manual_pricing', { name });
+          await this.handoff(from, '', 'long_stay_manual_pricing');
           return;
       }
     }
@@ -209,31 +197,63 @@ export class MessageHandlerService {
       merged.checkOut,
     );
     if (!ok) {
-      await this.reply(from, 'availability_no_handoff', {
-        name,
-        check_in: this.formatDate(merged.checkIn),
-        check_out: this.formatDate(merged.checkOut),
-        month: this.monthName(merged.checkIn),
-      });
+      await this.reply(from, 'availability_no_handoff');
       return;
     }
-
-    const quote = await this.pricing.calculate(merged.checkIn, merged.checkOut);
 
     await this.reply(
       from,
       'availability_yes_quote',
-      {
-        name,
-        check_in: this.formatDate(merged.checkIn),
-        check_out: this.formatDate(merged.checkOut),
-        nights: quote.nights,
-        price: this.formatPrice(quote.total),
-      },
       this.shouldAppendHarvest(merged.checkIn)
         ? 'september_wine_harvest_note'
         : undefined,
     );
+  }
+
+  private async handleGeneralInfo(
+    from: string,
+    kb: { kbTopic: string | null; confidence: number },
+  ): Promise<void> {
+    if (!kb.kbTopic || kb.confidence < KB_CONFIDENCE_THRESHOLD) {
+      await this.handoff(from, '', 'faq_unknown_handoff');
+      return;
+    }
+
+    let answer: string | null;
+    try {
+      answer = await this.knowledgeBase.render(kb.kbTopic);
+    } catch (err) {
+      this.logger.error('knowledge-base', 'render failed', {
+        topicKey: kb.kbTopic,
+        error: (err as Error).message,
+      });
+      await this.handoff(from, '', 'faq_unknown_handoff');
+      return;
+    }
+
+    if (!answer) {
+      this.logger.warn('knowledge-base', 'topic not found in KB', {
+        topicKey: kb.kbTopic,
+      });
+      await this.handoff(from, '', 'faq_unknown_handoff');
+      return;
+    }
+
+    await this.whatsapp.sendMessage(from, answer);
+    await this.messageLog.log(from, 'out', answer);
+  }
+
+  private async fetchKbTopicsSafe(): Promise<
+    Array<{ topicKey: string; questionExamples: string }>
+  > {
+    try {
+      return await this.knowledgeBase.listTopics();
+    } catch (err) {
+      this.logger.warn('knowledge-base', 'listTopics failed, parser will skip KB classification', {
+        error: (err as Error).message,
+      });
+      return [];
+    }
   }
 
   private async runOwnerCommand(cmd: ParsedCommand): Promise<void> {
@@ -272,14 +292,13 @@ export class MessageHandlerService {
   private async reply(
     to: string,
     key: string,
-    vars: TemplateVars,
     appendKey?: string,
     options: { override?: boolean } = {},
   ): Promise<void> {
-    let text = await this.response.render(key, vars);
+    let text = await this.response.render(key);
     if (appendKey) {
       try {
-        const note = await this.response.render(appendKey, {});
+        const note = await this.response.render(appendKey);
         text = `${text}\n\n${note}`;
       } catch (err) {
         this.logger.warn('templates', 'could not render append template', {
@@ -301,7 +320,6 @@ export class MessageHandlerService {
     from: string,
     originalText: string,
     templateKey: string,
-    vars: TemplateVars = {},
   ): Promise<void> {
     try {
       await this.conversation.setStatus(from, 'paused', {
@@ -315,7 +333,7 @@ export class MessageHandlerService {
     }
 
     try {
-      await this.reply(from, templateKey, vars, undefined, { override: true });
+      await this.reply(from, templateKey, undefined, { override: true });
     } catch (err) {
       this.logger.error('conversation', 'failed to send handoff reply', {
         from,

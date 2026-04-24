@@ -2,6 +2,7 @@ import { ConfigService } from '@nestjs/config';
 import { AvailabilityService } from '../availability/availability.service';
 import { BookingRulesService, RulesValidation } from '../booking-rules/booking-rules.service';
 import { ConversationService } from '../conversation/conversation.service';
+import { KnowledgeBaseService } from '../knowledge-base/knowledge-base.service';
 import { LoggerService } from '../logger/logger.service';
 import { MessageLogService } from '../messagelog/messagelog.service';
 import { ParseResult, ParserService } from '../parser/parser.service';
@@ -30,6 +31,7 @@ const defaultParsed = (overrides: Partial<ParseResult> = {}): ParseResult => ({
   guests: null,
   mentionsDiscount: false,
   highIntentSignal: false,
+  kbTopic: null,
   ...overrides,
 });
 
@@ -92,6 +94,15 @@ const makeMessageLog = (): MessageLogService =>
 const makeConfig = (owner: string | undefined = OWNER): ConfigService =>
   ({ get: () => owner }) as unknown as ConfigService;
 
+const makeKnowledgeBase = (
+  overrides: Partial<KnowledgeBaseService> = {},
+): KnowledgeBaseService =>
+  ({
+    listTopics: jest.fn().mockResolvedValue([]),
+    render: jest.fn().mockResolvedValue(null),
+    ...overrides,
+  }) as unknown as KnowledgeBaseService;
+
 const makeBookingRules = (
   result: RulesValidation = { pass: true },
 ): BookingRulesService =>
@@ -109,6 +120,7 @@ const build = (
     whatsapp?: WhatsappService;
     conversation?: ConversationService;
     messageLog?: MessageLogService;
+    knowledgeBase?: KnowledgeBaseService;
     logger?: LoggerService;
     config?: ConfigService;
   } = {},
@@ -122,6 +134,7 @@ const build = (
     over.whatsapp ?? makeWhatsapp(),
     over.conversation ?? makeConversation(),
     over.messageLog ?? makeMessageLog(),
+    over.knowledgeBase ?? makeKnowledgeBase(),
     over.logger ?? makeLogger(),
     over.config ?? makeConfig(),
   );
@@ -301,10 +314,7 @@ describe('MessageHandlerService.handle — availability flow', () => {
 
     await handler.handle({ from: CUSTOMER, text: 'is Jul 6-13 free?' });
 
-    expect(response.render).toHaveBeenCalledWith(
-      'availability_yes_quote',
-      expect.objectContaining({ nights: 7, price: '€2,100' }),
-    );
+    expect(response.render).toHaveBeenCalledWith('availability_yes_quote');
   });
 
   it('appends the September wine-harvest note when check-in falls in September', async () => {
@@ -337,10 +347,7 @@ describe('MessageHandlerService.handle — availability flow', () => {
 
     await handler.handle({ from: CUSTOMER, text: 'is Jul 6-13 free?' });
 
-    expect(response.render).toHaveBeenCalledWith(
-      'availability_no_handoff',
-      expect.objectContaining({ check_in: expect.any(String), check_out: expect.any(String), month: expect.any(String) }),
-    );
+    expect(response.render).toHaveBeenCalledWith('availability_no_handoff');
   });
 
   it('asks for clarification when dates are missing', async () => {
@@ -350,10 +357,7 @@ describe('MessageHandlerService.handle — availability flow', () => {
 
     await handler.handle({ from: CUSTOMER, text: 'free this summer?' });
 
-    expect(response.render).toHaveBeenCalledWith(
-      'dates_unclear_ask_clarify',
-      expect.any(Object),
-    );
+    expect(response.render).toHaveBeenCalledWith('dates_unclear_ask_clarify');
   });
 
   it('merges pending_dates from conversation state when parser returns nulls', async () => {
@@ -407,10 +411,7 @@ describe('MessageHandlerService.handle — booking rules', () => {
 
     await handler.handle({ from: CUSTOMER, text: 'available in 2026?' });
 
-    expect(response.render).toHaveBeenCalledWith(
-      'year_2026_redirect',
-      expect.any(Object),
-    );
+    expect(response.render).toHaveBeenCalledWith('year_2026_redirect');
   });
 
   it('renders dates_not_sunday_to_sunday with suggested dates when check-in is not a Sunday', async () => {
@@ -430,13 +431,7 @@ describe('MessageHandlerService.handle — booking rules', () => {
 
     await handler.handle({ from: CUSTOMER, text: 'Jul 7-13?' });
 
-    expect(response.render).toHaveBeenCalledWith(
-      'dates_not_sunday_to_sunday',
-      expect.objectContaining({
-        suggested_check_in: expect.any(String),
-        suggested_check_out: expect.any(String),
-      }),
-    );
+    expect(response.render).toHaveBeenCalledWith('dates_not_sunday_to_sunday');
   });
 
   it('renders minimum_stay_not_met with suggested dates when stay is too short', async () => {
@@ -456,13 +451,7 @@ describe('MessageHandlerService.handle — booking rules', () => {
 
     await handler.handle({ from: CUSTOMER, text: 'just one night?' });
 
-    expect(response.render).toHaveBeenCalledWith(
-      'minimum_stay_not_met',
-      expect.objectContaining({
-        suggested_check_in: expect.any(String),
-        suggested_check_out: expect.any(String),
-      }),
-    );
+    expect(response.render).toHaveBeenCalledWith('minimum_stay_not_met');
   });
 
   it('hands off via long_stay_manual_pricing and pauses when Oct-May long stay detected', async () => {
@@ -481,10 +470,7 @@ describe('MessageHandlerService.handle — booking rules', () => {
 
     await handler.handle({ from: CUSTOMER, text: 'can I rent for November?' });
 
-    expect(response.render).toHaveBeenCalledWith(
-      'long_stay_manual_pricing',
-      expect.any(Object),
-    );
+    expect(response.render).toHaveBeenCalledWith('long_stay_manual_pricing');
     expect(conversation.setStatus).toHaveBeenCalledWith(CUSTOMER, 'paused', {
       pauseForMinutes: 60,
     });
@@ -506,10 +492,7 @@ describe('MessageHandlerService.handle — discount detection', () => {
 
     await handler.handle({ from: CUSTOMER, text: 'can I get a better rate?' });
 
-    expect(response.render).toHaveBeenCalledWith(
-      'discount_request',
-      expect.any(Object),
-    );
+    expect(response.render).toHaveBeenCalledWith('discount_request');
     expect(conversation.setStatus).toHaveBeenCalledWith(CUSTOMER, 'paused', {
       pauseForMinutes: 60,
     });
@@ -547,10 +530,7 @@ describe('MessageHandlerService.handle — other intents', () => {
 
     await handler.handle({ from: CUSTOMER, text: 'hi' });
 
-    expect(response.render).toHaveBeenCalledWith(
-      'greeting_ask_dates',
-      expect.any(Object),
-    );
+    expect(response.render).toHaveBeenCalledWith('greeting_ask_dates');
   });
 
   it('pricing_inquiry without dates asks for clarification', async () => {
@@ -560,10 +540,7 @@ describe('MessageHandlerService.handle — other intents', () => {
 
     await handler.handle({ from: CUSTOMER, text: 'how much?' });
 
-    expect(response.render).toHaveBeenCalledWith(
-      'dates_unclear_ask_clarify',
-      expect.any(Object),
-    );
+    expect(response.render).toHaveBeenCalledWith('dates_unclear_ask_clarify');
   });
 
   it('booking_confirmation hands off and pauses', async () => {
@@ -575,10 +552,7 @@ describe('MessageHandlerService.handle — other intents', () => {
 
     await handler.handle({ from: CUSTOMER, text: "let's book" });
 
-    expect(response.render).toHaveBeenCalledWith(
-      'booking_confirmed_handoff',
-      expect.any(Object),
-    );
+    expect(response.render).toHaveBeenCalledWith('booking_confirmed_handoff');
     expect(conversation.setStatus).toHaveBeenCalledWith(CUSTOMER, 'paused', {
       pauseForMinutes: 60,
     });
@@ -596,10 +570,7 @@ describe('MessageHandlerService.handle — other intents', () => {
 
     await handler.handle({ from: CUSTOMER, text: 'let me talk to someone' });
 
-    expect(response.render).toHaveBeenCalledWith(
-      'human_request_handoff',
-      expect.any(Object),
-    );
+    expect(response.render).toHaveBeenCalledWith('human_request_handoff');
   });
 
   it('complaint_or_frustration hands off via complaint_handoff', async () => {
@@ -609,10 +580,7 @@ describe('MessageHandlerService.handle — other intents', () => {
 
     await handler.handle({ from: CUSTOMER, text: 'this is awful' });
 
-    expect(response.render).toHaveBeenCalledWith(
-      'complaint_handoff',
-      expect.any(Object),
-    );
+    expect(response.render).toHaveBeenCalledWith('complaint_handoff');
   });
 
   it('general_info hands off via faq_unknown_handoff', async () => {
@@ -625,10 +593,7 @@ describe('MessageHandlerService.handle — other intents', () => {
       text: 'do you have a hair dryer?',
     });
 
-    expect(response.render).toHaveBeenCalledWith(
-      'faq_unknown_handoff',
-      expect.any(Object),
-    );
+    expect(response.render).toHaveBeenCalledWith('faq_unknown_handoff');
   });
 
   it('off_topic_or_unclear hands off via unclear_handoff', async () => {
@@ -638,10 +603,7 @@ describe('MessageHandlerService.handle — other intents', () => {
 
     await handler.handle({ from: CUSTOMER, text: 'glarg' });
 
-    expect(response.render).toHaveBeenCalledWith(
-      'unclear_handoff',
-      expect.any(Object),
-    );
+    expect(response.render).toHaveBeenCalledWith('unclear_handoff');
   });
 });
 
@@ -670,10 +632,7 @@ describe('MessageHandlerService.handle — fail-safe paths', () => {
 
     await handler.handle({ from: CUSTOMER, text: 'is Jul 6-13 free?' });
 
-    expect(response.render).toHaveBeenCalledWith(
-      'unclear_handoff',
-      expect.any(Object),
-    );
+    expect(response.render).toHaveBeenCalledWith('unclear_handoff');
     expect(conversation.setStatus).toHaveBeenCalledWith(CUSTOMER, 'paused', {
       pauseForMinutes: 60,
     });

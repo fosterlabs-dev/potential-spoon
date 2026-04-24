@@ -2,9 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Anthropic from '@anthropic-ai/sdk';
 import { LoggerService } from '../logger/logger.service';
-import { TemplatesService, TemplateVars } from '../templates/templates.service';
-
-export type { TemplateVars };
+import { TemplatesService } from '../templates/templates.service';
 
 const SCENARIO_LABELS: Record<string, string> = {
   greeting_ask_dates: 'Guest made first contact without providing dates — ask for their dates politely',
@@ -20,16 +18,6 @@ const SCENARIO_LABELS: Record<string, string> = {
   hold_expired: 'Let the guest know their hold has expired and the dates are released',
   booking_confirmed_handoff: 'Guest wants to book — ask for their email address to proceed',
   booking_confirmed_instant_book: 'Guest wants to book — direct them to complete it on the website',
-  faq_pool_heated: 'Answer question about whether the pool is heated',
-  faq_sleeps: 'Answer question about how many guests the house sleeps',
-  faq_car_needed: 'Answer question about whether a car is needed',
-  faq_ev_charger: 'Answer question about EV charging availability',
-  faq_pool_towels: 'Answer question about pool towels',
-  faq_nearest_shops: 'Answer question about nearby shops',
-  faq_cot_highchair: 'Answer question about cots and highchairs',
-  faq_dogs: 'Answer question about dogs',
-  faq_check_in_out_times: 'Answer question about check-in and check-out times',
-  faq_location: 'Answer question about where the property is',
   faq_unknown_handoff: 'Question outside knowledge base — acknowledge and say you will come back shortly',
   year_2026_redirect: '2026 dates requested — 2026 is fully booked, offer to look at 2027',
   long_stay_manual_pricing: 'Long stay Oct-May requested — pricing is individual, say you will come back with a quote',
@@ -49,7 +37,7 @@ This is a live WhatsApp chat — write like a real person continuing a conversat
 Tone: warm, premium, human, confident but never pushy. Use "reserved" not "sold" or "taken."
 
 Conversation flow rules:
-- Do NOT open with "Hi", "Hi there", "Hello", or any greeting — you are mid-conversation
+- Do NOT open with "Hi", "Hithere", "Hello", or any greeting — you are mid-conversation
 - Do NOT open with "Thanks for getting in touch", "Thank you for your message", or any thank-you preamble
 - Do NOT sign off with "Jim", "Thanks\\nJim", "Kind regards", or similar — WhatsApp replies don't need sign-offs
 - Do NOT append www.bontemaison.com unless the scenario specifically calls for sharing the website
@@ -90,14 +78,14 @@ export class ResponseService {
     }
   }
 
-  async render(key: string, vars: TemplateVars): Promise<string> {
+  async render(key: string): Promise<string> {
     if (this.mode === 'generate' && this.client) {
-      return this.generate(key, vars);
+      return this.generate(key);
     }
-    return this.templates.render(key, vars);
+    return this.templates.render(key);
   }
 
-  private async generate(key: string, vars: TemplateVars): Promise<string> {
+  private async generate(key: string): Promise<string> {
     let examples: string[] = [];
     try {
       examples = await this.templates.fetchRaw(key);
@@ -105,7 +93,7 @@ export class ResponseService {
       // style examples are best-effort
     }
 
-    const prompt = this.buildPrompt(key, vars, examples);
+    const prompt = this.buildPrompt(key, examples);
 
     try {
       const response = await this.client!.messages.create({
@@ -124,15 +112,11 @@ export class ResponseService {
         key,
         error: (err as Error).message,
       });
-      return this.templates.render(key, vars);
+      return this.templates.render(key);
     }
   }
 
-  private buildPrompt(
-    key: string,
-    vars: TemplateVars,
-    examples: string[],
-  ): string {
+  private buildPrompt(key: string, examples: string[]): string {
     const parts: string[] = [];
 
     if (examples.length > 0) {
@@ -147,14 +131,6 @@ export class ResponseService {
 
     const scenario = SCENARIO_LABELS[key] ?? `Handle scenario: ${key}`;
     parts.push(`Scenario: ${scenario}`);
-
-    const facts = Object.entries(vars)
-      .filter(([, v]) => v !== '' && v !== null && v !== undefined)
-      .map(([k, v]) => `- ${k}: ${String(v)}`)
-      .join('\n');
-    if (facts) {
-      parts.push(`Facts for your reply (include all of these):\n${facts}`);
-    }
 
     parts.push('Write Jim\'s WhatsApp reply. Plain text only.');
 

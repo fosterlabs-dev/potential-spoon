@@ -27,29 +27,19 @@ describe('ResponseService — template mode', () => {
     const templates = makeTemplates('hello');
     const svc = new ResponseService(templates, makeLogger(), makeConfig());
 
-    const result = await svc.render('greeting_ask_dates', { name: 'Sarah' });
+    const result = await svc.render('greeting_ask_dates');
 
     expect(result).toBe('hello');
-    expect(templates.render).toHaveBeenCalledWith('greeting_ask_dates', { name: 'Sarah' });
+    expect(templates.render).toHaveBeenCalledWith('greeting_ask_dates');
   });
 
   it('defaults to template mode when RESPONSE_MODE is unset', async () => {
     const templates = makeTemplates('from template');
     const svc = new ResponseService(templates, makeLogger(), makeConfig());
 
-    await svc.render('greeting_ask_dates', { name: 'Sarah' });
+    await svc.render('greeting_ask_dates');
 
     expect(templates.render).toHaveBeenCalled();
-  });
-
-  it('passes vars through to TemplatesService', async () => {
-    const templates = makeTemplates('rendered');
-    const svc = new ResponseService(templates, makeLogger(), makeConfig());
-    const vars = { name: 'Maria', check_in: 'Sunday 6 July', price: '€2,100' };
-
-    await svc.render('availability_yes_quote', vars);
-
-    expect(templates.render).toHaveBeenCalledWith('availability_yes_quote', vars);
   });
 
   it('raises for unknown template key (propagates TemplatesService error)', async () => {
@@ -59,7 +49,7 @@ describe('ResponseService — template mode', () => {
     );
     const svc = new ResponseService(templates, makeLogger(), makeConfig());
 
-    await expect(svc.render('bad_key', {})).rejects.toThrow('no template found');
+    await expect(svc.render('bad_key')).rejects.toThrow('no template found');
   });
 });
 

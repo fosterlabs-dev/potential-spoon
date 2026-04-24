@@ -10,6 +10,7 @@ export type LogModule =
   | 'response'
   | 'conversation'
   | 'messagelog'
+  | 'knowledge-base'
   | 'airtable';
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
@@ -33,6 +34,7 @@ const MODULE_COLOR: Record<LogModule, string> = {
   response: '\x1b[92m',
   conversation: '\x1b[37m',
   messagelog: '\x1b[96m',
+  'knowledge-base': '\x1b[93m',
   airtable: '\x1b[90m',
 };
 
