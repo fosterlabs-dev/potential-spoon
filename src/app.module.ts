@@ -4,6 +4,7 @@ import { AirtableModule } from './airtable/airtable.module';
 import { AvailabilityModule } from './availability/availability.module';
 import { BookingRulesModule } from './booking-rules/booking-rules.module';
 import { ConversationModule } from './conversation/conversation.module';
+import { HoldsModule } from './holds/holds.module';
 import { KnowledgeBaseModule } from './knowledge-base/knowledge-base.module';
 import { LoggerModule } from './logger/logger.module';
 import { MessageLogModule } from './messagelog/messagelog.module';
@@ -27,6 +28,7 @@ import { WhatsappModule } from './whatsapp/whatsapp.module';
     ConversationModule,
     MessageLogModule,
     WhatsappModule,
+    HoldsModule,
     OrchestratorModule,
   ],
 })

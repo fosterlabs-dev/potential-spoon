@@ -2,6 +2,7 @@ import { ConfigService } from '@nestjs/config';
 import { AvailabilityService } from '../availability/availability.service';
 import { BookingRulesService, RulesValidation } from '../booking-rules/booking-rules.service';
 import { ConversationService } from '../conversation/conversation.service';
+import { HoldsService } from '../holds/holds.service';
 import { KnowledgeBaseService } from '../knowledge-base/knowledge-base.service';
 import { LoggerService } from '../logger/logger.service';
 import { MessageLogService } from '../messagelog/messagelog.service';
@@ -110,12 +111,19 @@ const makeBookingRules = (
     validate: jest.fn().mockReturnValue(result),
   }) as unknown as BookingRulesService;
 
+const makeHolds = (hasOverlap = false): HoldsService =>
+  ({
+    hasOverlap: jest.fn().mockResolvedValue(hasOverlap),
+    createHold: jest.fn().mockResolvedValue({ id: 'rec1', fields: {} }),
+  }) as unknown as HoldsService;
+
 const build = (
   over: {
     parser?: ParserService;
     availability?: AvailabilityService;
     pricing?: PricingService;
     bookingRules?: BookingRulesService;
+    holds?: HoldsService;
     response?: ResponseService;
     whatsapp?: WhatsappService;
     conversation?: ConversationService;
@@ -130,6 +138,7 @@ const build = (
     over.availability ?? makeAvailability(),
     over.pricing ?? makePricing(),
     over.bookingRules ?? makeBookingRules(),
+    over.holds ?? makeHolds(),
     over.response ?? makeResponse(),
     over.whatsapp ?? makeWhatsapp(),
     over.conversation ?? makeConversation(),
@@ -725,5 +734,104 @@ describe('MessageHandlerService.handle — context persistence', () => {
         }),
       }),
     );
+  });
+});
+
+describe('MessageHandlerService.handle — hold flows', () => {
+  it('sends hold_offer_post_quote when availability ok and highIntentSignal is true', async () => {
+    const parser = makeParser({
+      intent: 'availability_inquiry',
+      checkIn: SUN_CHECK_IN,
+      checkOut: SUN_CHECK_OUT,
+      highIntentSignal: true,
+    });
+    const response = makeResponse('rendered');
+    const handler = build({ parser, response });
+
+    await handler.handle({ from: CUSTOMER, text: 'those dates look great, can I book?' });
+
+    const calls = (response.render as jest.Mock).mock.calls.map((c) => c[0]);
+    expect(calls).toContain('hold_offer_post_quote');
+  });
+
+  it('does not send hold_offer_post_quote when highIntentSignal is false', async () => {
+    const parser = makeParser({
+      intent: 'availability_inquiry',
+      checkIn: SUN_CHECK_IN,
+      checkOut: SUN_CHECK_OUT,
+      highIntentSignal: false,
+    });
+    const response = makeResponse('rendered');
+    const handler = build({ parser, response });
+
+    await handler.handle({ from: CUSTOMER, text: 'are those dates free?' });
+
+    const calls = (response.render as jest.Mock).mock.calls.map((c) => c[0]);
+    expect(calls).not.toContain('hold_offer_post_quote');
+  });
+
+  it('treats held dates as unavailable (sends availability_no_handoff)', async () => {
+    const parser = makeParser({
+      intent: 'availability_inquiry',
+      checkIn: SUN_CHECK_IN,
+      checkOut: SUN_CHECK_OUT,
+    });
+    const holds = makeHolds(true); // overlap
+    const availability = makeAvailability(true);
+    const response = makeResponse('rendered');
+    const handler = build({ parser, holds, availability, response });
+
+    await handler.handle({ from: CUSTOMER, text: 'are those dates free?' });
+
+    const calls = (response.render as jest.Mock).mock.calls.map((c) => c[0]);
+    expect(calls).toContain('availability_no_handoff');
+    expect(availability.isRangeAvailable).not.toHaveBeenCalled();
+  });
+
+  it('creates a hold and sends hold_confirmed on hold_request intent', async () => {
+    const parser = makeParser({
+      intent: 'hold_request',
+      checkIn: SUN_CHECK_IN,
+      checkOut: SUN_CHECK_OUT,
+    });
+    const holds = makeHolds(false);
+    const response = makeResponse('confirmed');
+    const handler = build({ parser, holds, response });
+
+    await handler.handle({ from: CUSTOMER, text: 'please hold those dates' });
+
+    expect(holds.createHold).toHaveBeenCalledWith(CUSTOMER, SUN_CHECK_IN, SUN_CHECK_OUT);
+    const calls = (response.render as jest.Mock).mock.calls.map((c) => c[0]);
+    expect(calls).toContain('hold_confirmed');
+  });
+
+  it('asks for dates on hold_request when no dates provided', async () => {
+    const parser = makeParser({ intent: 'hold_request' });
+    const response = makeResponse('rendered');
+    const holds = makeHolds(false);
+    const handler = build({ parser, holds, response });
+
+    await handler.handle({ from: CUSTOMER, text: 'can you hold dates for me?' });
+
+    const calls = (response.render as jest.Mock).mock.calls.map((c) => c[0]);
+    expect(calls).toContain('dates_unclear_ask_clarify');
+    expect(holds.createHold).not.toHaveBeenCalled();
+  });
+
+  it('sends availability_no_handoff on hold_request when dates are already held', async () => {
+    const parser = makeParser({
+      intent: 'hold_request',
+      checkIn: SUN_CHECK_IN,
+      checkOut: SUN_CHECK_OUT,
+    });
+    const holds = makeHolds(true);
+    const response = makeResponse('rendered');
+    const handler = build({ parser, holds, response });
+
+    await handler.handle({ from: CUSTOMER, text: 'please hold those dates' });
+
+    const calls = (response.render as jest.Mock).mock.calls.map((c) => c[0]);
+    expect(calls).toContain('availability_no_handoff');
+    expect(holds.createHold).not.toHaveBeenCalled();
   });
 });

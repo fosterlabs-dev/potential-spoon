@@ -21,7 +21,7 @@ describe('TemplatesService', () => {
         fields: {
           key: 'availability_confirmed',
           variant: 1,
-          text: 'Hi {nights} nights for {total} — sound good?',
+          text: 'Hi {name}, {nights} nights for {total} — sound good?',
         },
       },
     ]);
@@ -36,7 +36,7 @@ describe('TemplatesService', () => {
     expect(airtable.list).toHaveBeenCalledWith('Templates', {
       filterByFormula: "{key}='availability_confirmed'",
     });
-    expect(out).toBe('HiSam, 3 nights for $450 — sound good?');
+    expect(out).toBe('Hi Sam, 3 nights for $450 — sound good?');
   });
 
   it('throws when no template matches the key', async () => {

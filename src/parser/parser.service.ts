@@ -9,6 +9,7 @@ export type Intent =
   | 'pricing_inquiry'
   | 'general_info'
   | 'booking_confirmation'
+  | 'hold_request'
   | 'human_request'
   | 'complaint_or_frustration'
   | 'off_topic_or_unclear';
@@ -44,6 +45,7 @@ Return ONLY a JSON object with these keys (no prose, no code fences):
   - "pricing_inquiry" — asks about prices, rates, cost, or a quote
   - "general_info" — asks a factual question about the property, location, amenities, check-in time, etc.
   - "booking_confirmation" — explicitly confirms they want to proceed with a booking they've already discussed (e.g. "yes let's book those dates", "confirmed", "I'll pay now"). NOT a first-contact "I'd like to book the villa" — that's a greeting or availability_inquiry depending on whether they gave dates.
+  - "hold_request" — explicitly asks to hold or reserve dates without committing to a full booking (e.g. "can you hold those dates", "put a hold on it", "pencil us in", "reserve those dates for me")
   - "human_request" — explicitly asks to talk to a person, the owner, or a human
   - "complaint_or_frustration" — is upset, frustrated, complaining, or expressing dissatisfaction
   - "off_topic_or_unclear" — anything else you cannot classify confidently
@@ -81,6 +83,7 @@ const VALID_INTENTS: readonly Intent[] = [
   'pricing_inquiry',
   'general_info',
   'booking_confirmation',
+  'hold_request',
   'human_request',
   'complaint_or_frustration',
   'off_topic_or_unclear',

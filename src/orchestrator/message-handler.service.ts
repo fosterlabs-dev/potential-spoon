@@ -7,6 +7,7 @@ import {
   ParsedCommand,
   PendingDates,
 } from '../conversation/conversation.service';
+import { HoldsService } from '../holds/holds.service';
 import { KnowledgeBaseService } from '../knowledge-base/knowledge-base.service';
 import { LoggerService } from '../logger/logger.service';
 import { MessageLogService } from '../messagelog/messagelog.service';
@@ -38,6 +39,7 @@ export class MessageHandlerService {
     private readonly availability: AvailabilityService,
     private readonly pricing: PricingService,
     private readonly bookingRules: BookingRulesService,
+    private readonly holds: HoldsService,
     private readonly response: ResponseService,
     private readonly whatsapp: WhatsappService,
     private readonly conversation: ConversationService,
@@ -103,10 +105,13 @@ export class MessageHandlerService {
         return;
       }
 
-      await this.route(msg.from, parsed.intent, merged, {
-        kbTopic: parsed.kbTopic,
-        confidence: parsed.confidence,
-      });
+      await this.route(
+        msg.from,
+        parsed.intent,
+        merged,
+        { kbTopic: parsed.kbTopic, confidence: parsed.confidence },
+        parsed.highIntentSignal,
+      );
     } catch (err) {
       this.logger.error('conversation', 'message handling failed', {
         from: msg.from,
@@ -123,13 +128,14 @@ export class MessageHandlerService {
     intent: Intent,
     merged: MergedIntent,
     kb: { kbTopic: string | null; confidence: number },
+    highIntentSignal: boolean,
   ): Promise<void> {
     const name = merged.customerName ?? '';
 
     switch (intent) {
       case 'greeting':
         if (merged.checkIn && merged.checkOut) {
-          await this.handleAvailability(from, merged);
+          await this.handleAvailability(from, merged, highIntentSignal);
           return;
         }
         await this.reply(from, 'greeting_ask_dates', { name });
@@ -140,7 +146,7 @@ export class MessageHandlerService {
           await this.reply(from, 'dates_unclear_ask_clarify', { name });
           return;
         }
-        await this.handleAvailability(from, merged);
+        await this.handleAvailability(from, merged, highIntentSignal);
         return;
 
       case 'pricing_inquiry':
@@ -148,7 +154,7 @@ export class MessageHandlerService {
           await this.reply(from, 'dates_unclear_ask_clarify', { name });
           return;
         }
-        await this.handleAvailability(from, merged);
+        await this.handleAvailability(from, merged, highIntentSignal);
         return;
 
       case 'general_info':
@@ -157,6 +163,10 @@ export class MessageHandlerService {
 
       case 'booking_confirmation':
         await this.handoff(from, '', 'booking_confirmed_handoff', { name });
+        return;
+
+      case 'hold_request':
+        await this.handleHoldRequest(from, merged);
         return;
 
       case 'human_request':
@@ -177,6 +187,7 @@ export class MessageHandlerService {
   private async handleAvailability(
     from: string,
     merged: MergedIntent,
+    highIntentSignal = false,
   ): Promise<void> {
     if (!merged.checkIn || !merged.checkOut) return;
 
@@ -212,11 +223,12 @@ export class MessageHandlerService {
       }
     }
 
-    const ok = await this.availability.isRangeAvailable(
-      merged.checkIn,
-      merged.checkOut,
-    );
-    if (!ok) {
+    const held = await this.holds.hasOverlap(merged.checkIn, merged.checkOut);
+    const icalOk = held
+      ? false
+      : await this.availability.isRangeAvailable(merged.checkIn, merged.checkOut);
+
+    if (!icalOk) {
       await this.reply(from, 'availability_no_handoff', {
         name,
         check_in: this.formatDate(merged.checkIn),
@@ -242,6 +254,74 @@ export class MessageHandlerService {
         ? 'september_wine_harvest_note'
         : undefined,
     );
+
+    if (highIntentSignal) {
+      await this.reply(from, 'hold_offer_post_quote', {
+        name,
+        check_in: this.formatDate(merged.checkIn),
+        check_out: this.formatDate(merged.checkOut),
+      });
+    }
+  }
+
+  private async handleHoldRequest(
+    from: string,
+    merged: MergedIntent,
+  ): Promise<void> {
+    const name = merged.customerName ?? '';
+
+    if (!merged.checkIn || !merged.checkOut) {
+      await this.reply(from, 'dates_unclear_ask_clarify', { name });
+      return;
+    }
+
+    const rule = this.bookingRules.validate(merged.checkIn, merged.checkOut);
+    if (!rule.pass) {
+      switch (rule.reason) {
+        case 'year_2026_redirect':
+          await this.reply(from, 'year_2026_redirect', { name });
+          return;
+        case 'not_sunday':
+          await this.reply(from, 'dates_not_sunday_to_sunday', {
+            name,
+            suggested_check_in: this.formatDate(new Date(rule.suggestedCheckIn)),
+            suggested_check_out: this.formatDate(new Date(rule.suggestedCheckOut)),
+          });
+          return;
+        case 'min_stay':
+          await this.reply(from, 'minimum_stay_not_met', {
+            name,
+            suggested_check_in: this.formatDate(new Date(rule.suggestedCheckIn)),
+            suggested_check_out: this.formatDate(new Date(rule.suggestedCheckOut)),
+          });
+          return;
+        case 'long_stay_manual':
+          await this.handoff(from, '', 'long_stay_manual_pricing', { name });
+          return;
+      }
+    }
+
+    const held = await this.holds.hasOverlap(merged.checkIn, merged.checkOut);
+    const icalOk = held
+      ? false
+      : await this.availability.isRangeAvailable(merged.checkIn, merged.checkOut);
+
+    if (!icalOk) {
+      await this.reply(from, 'availability_no_handoff', {
+        name,
+        check_in: this.formatDate(merged.checkIn),
+        check_out: this.formatDate(merged.checkOut),
+        month: this.monthName(merged.checkIn),
+      });
+      return;
+    }
+
+    await this.holds.createHold(from, merged.checkIn, merged.checkOut);
+    await this.reply(from, 'hold_confirmed', {
+      name,
+      check_in: this.formatDate(merged.checkIn),
+      check_out: this.formatDate(merged.checkOut),
+    });
   }
 
   private async handleGeneralInfo(

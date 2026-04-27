@@ -83,6 +83,7 @@ describe('ParserService', () => {
       guests: 2,
       mentionsDiscount: false,
       highIntentSignal: false,
+      kbTopic: null,
     });
   });
 
@@ -145,6 +146,7 @@ describe('ParserService', () => {
       guests: null,
       mentionsDiscount: false,
       highIntentSignal: false,
+      kbTopic: null,
     });
   });
 
