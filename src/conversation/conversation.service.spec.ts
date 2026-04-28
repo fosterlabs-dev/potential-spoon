@@ -35,7 +35,7 @@ describe('ConversationService.getStatus', () => {
   it('returns the stored status when a row exists', async () => {
     const airtable = makeAirtable({
       list: jest.fn().mockResolvedValue([
-        { id: 'rec1', fields: { phone: '62812', status: 'human' } },
+        { id: 'rec1', fields: { phone: '62812', pause_status: 'human' } },
       ]),
     });
     const service = new ConversationService(airtable, makeLogger());
@@ -49,7 +49,7 @@ describe('ConversationService.getStatus', () => {
       list: jest.fn().mockResolvedValue([
         {
           id: 'rec1',
-          fields: { phone: '62812', status: 'paused', pause_until: past },
+          fields: { phone: '62812', pause_status: 'paused', pause_until: past },
         },
       ]),
     });
@@ -64,7 +64,7 @@ describe('ConversationService.getStatus', () => {
       list: jest.fn().mockResolvedValue([
         {
           id: 'rec1',
-          fields: { phone: '62812', status: 'paused', pause_until: future },
+          fields: { phone: '62812', pause_status: 'paused', pause_until: future },
         },
       ]),
     });
@@ -82,6 +82,7 @@ describe('ConversationService.getState', () => {
 
     expect(state).toEqual({
       status: 'bot',
+      lifecycleStatus: 'New',
       lastIntent: null,
       pendingDates: null,
       customerName: null,
@@ -100,7 +101,7 @@ describe('ConversationService.getState', () => {
           id: 'r',
           fields: {
             phone: '62812',
-            status: 'bot',
+            pause_status: 'bot',
             last_intent: 'availability_inquiry',
             pending_dates: pending,
             customer_name: 'Maria',
@@ -147,7 +148,7 @@ describe('ConversationService.canSendBot', () => {
   it('blocks sends when status is human or paused', async () => {
     const humanAirtable = makeAirtable({
       list: jest.fn().mockResolvedValue([
-        { id: 'r', fields: { phone: '62812', status: 'human' } },
+        { id: 'r', fields: { phone: '62812', pause_status: 'human' } },
       ]),
     });
     const pausedAirtable = makeAirtable({
@@ -156,7 +157,7 @@ describe('ConversationService.canSendBot', () => {
           id: 'r',
           fields: {
             phone: '62812',
-            status: 'paused',
+            pause_status: 'paused',
             pause_until: new Date(Date.now() + 60_000).toISOString(),
           },
         },
@@ -185,14 +186,14 @@ describe('ConversationService.setStatus', () => {
 
     expect(airtable.create).toHaveBeenCalledWith(
       'Conversations',
-      expect.objectContaining({ phone: '62812', status: 'human' }),
+      expect.objectContaining({ phone: '62812', pause_status: 'human' }),
     );
   });
 
   it('updates the existing row when one exists', async () => {
     const airtable = makeAirtable({
       list: jest.fn().mockResolvedValue([
-        { id: 'rec1', fields: { phone: '62812', status: 'bot' } },
+        { id: 'rec1', fields: { phone: '62812', pause_status: 'bot' } },
       ]),
     });
     const service = new ConversationService(airtable, makeLogger());
@@ -205,7 +206,7 @@ describe('ConversationService.setStatus', () => {
       'Conversations',
       'rec1',
       expect.objectContaining({
-        status: 'paused',
+        pause_status: 'paused',
         pause_until: expect.any(String),
       }),
     );

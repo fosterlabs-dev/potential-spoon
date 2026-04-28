@@ -70,10 +70,26 @@ export async function expectConversationStatus(
     if (status === 'bot') return; // no row = default 'bot'
     throw new Error(`no Conversations row for ${phone}`);
   }
-  const effective = row.fields.status ?? 'bot';
+  const effective = row.fields.pause_status ?? 'bot';
   if (effective !== status) {
     throw new Error(
       `expected conversation status "${status}", got "${String(effective)}"`,
+    );
+  }
+}
+
+export async function expectLifecycleStatus(
+  h: Harness,
+  status: 'New' | 'Responded' | 'Follow-up' | 'Booked' | 'Lost',
+  phone: string = CUSTOMER,
+): Promise<void> {
+  const rows = h.airtable.rows('Conversations');
+  const row = rows.find((r) => r.fields.phone === phone);
+  if (!row) throw new Error(`no Conversations row for ${phone}`);
+  const effective = row.fields.status ?? 'New';
+  if (effective !== status) {
+    throw new Error(
+      `expected lifecycle status "${status}", got "${String(effective)}"`,
     );
   }
 }

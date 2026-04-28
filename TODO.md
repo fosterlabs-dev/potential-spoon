@@ -123,17 +123,17 @@ Build in this order — each phase should be fully working and tested before mov
 ### Phase 2 — Hold system
 > 5-day date hold with automated reminders and release.
 
-- [ ] **Airtable `Holds` table** — create schema (phone, check_in, check_out, hold_created_at, hold_expires_at, reminder_sent, status)
-- [ ] **HoldsService** (`src/holds/`)
+- [x] **Airtable `Holds` table** — create schema (phone, check_in, check_out, hold_created_at, hold_expires_at, reminder_sent, status)
+- [x] **HoldsService** (`src/holds/`)
   - Create hold
   - Check if dates are held by anyone (treat as unavailable to others)
   - Mark hold as converted / cancelled
-- [ ] **Hold offer** — append to quote reply when high intent or explicitly requested
-- [ ] **Hold acceptance flow** — parse "yes hold those dates" intent → create hold → send confirmation
-- [ ] **Hold expiry cron** (node-cron, daily)
+- [x] **Hold offer** — append to quote reply when high intent or explicitly requested
+- [x] **Hold acceptance flow** — parse "yes hold those dates" intent → create hold → send confirmation
+- [x] **Hold expiry cron** (node-cron, daily)
   - Find holds expiring today → send reminder (day 4)
   - Find holds past expiry → auto-release + send expiry message
-- [ ] **Phase 2 tests**
+- [x] **Phase 2 tests**
   - Hold created correctly with 5-day expiry
   - Held dates treated as unavailable for second enquirer
   - Reminder sent at day 4, not before/after
@@ -145,13 +145,13 @@ Build in this order — each phase should be fully working and tested before mov
 ### Phase 3 — Follow-up sequences
 > Automated 24h + 7d follow-ups for non-responding enquirers.
 
-- [ ] **Airtable `Conversations` follow-up fields** — `follow_up_24h_sent`, `follow_up_7d_sent`, `follow_up_count`
-- [ ] **Follow-up scheduler** (node-cron, hourly or daily)
+- [x] **Airtable `Conversations` follow-up fields** — `follow_up_24h_sent`, `follow_up_7d_sent`, `follow_up_count`
+- [x] **Follow-up scheduler** (node-cron, hourly or daily)
   - Find enquiries with no reply + no booking + 24h elapsed → send 24h nudge
   - Find enquiries with no reply + no booking + 7d elapsed → send 7d nudge
   - Mark sent flags after each send
-- [ ] **Cancel logic** — if customer replies or books, clear pending follow-ups
-- [ ] **Phase 3 tests**
+- [x] **Cancel logic** — if customer replies or books, clear pending follow-ups
+- [x] **Phase 3 tests**
   - 24h nudge fires at right time, not before
   - 7d nudge fires, 24h not re-sent
   - Reply from customer cancels sequence

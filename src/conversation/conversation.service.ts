@@ -4,6 +4,15 @@ import { LoggerService } from '../logger/logger.service';
 
 export type ConversationStatus = 'bot' | 'human' | 'paused';
 
+export type LifecycleStatus =
+  | 'New'
+  | 'Responded'
+  | 'Follow-up'
+  | 'Booked'
+  | 'Lost';
+
+export type AvailabilityResult = 'available' | 'unavailable' | 'pending';
+
 export type PendingDates = {
   checkIn?: string | null;
   checkOut?: string | null;
@@ -12,6 +21,7 @@ export type PendingDates = {
 
 export type ConversationState = {
   status: ConversationStatus;
+  lifecycleStatus: LifecycleStatus;
   lastIntent: string | null;
   pendingDates: PendingDates | null;
   customerName: string | null;
@@ -25,12 +35,22 @@ export type ParsedCommand =
 
 type ConversationFields = {
   phone?: string;
-  status?: ConversationStatus;
+  pause_status?: ConversationStatus;
   pause_until?: string;
-  last_message_at?: string;
+  status?: LifecycleStatus;
+  last_activity?: string;
   last_intent?: string;
   pending_dates?: string;
   customer_name?: string;
+  email?: string;
+  dates_requested?: string;
+  price_quoted?: number;
+  availability_result?: AvailabilityResult;
+  follow_up_count?: number;
+  follow_up_24h_sent?: boolean;
+  follow_up_7d_sent?: boolean;
+  enquiry_source?: string;
+  notes?: string;
 };
 
 const COMMAND_NAMES = ['release', 'pause', 'resume', 'status'] as const;
@@ -38,6 +58,7 @@ type CommandName = (typeof COMMAND_NAMES)[number];
 
 const DEFAULT_STATE: ConversationState = {
   status: 'bot',
+  lifecycleStatus: 'New',
   lastIntent: null,
   pendingDates: null,
   customerName: null,
@@ -55,10 +76,10 @@ export class ConversationService {
     if (!row) return 'bot';
 
     const f = row.fields;
-    if (f.status === 'paused' && f.pause_until) {
+    if (f.pause_status === 'paused' && f.pause_until) {
       if (new Date(f.pause_until).getTime() < Date.now()) return 'bot';
     }
-    return f.status ?? 'bot';
+    return f.pause_status ?? 'bot';
   }
 
   async getState(phone: string): Promise<ConversationState> {
@@ -67,14 +88,15 @@ export class ConversationService {
 
     const f = row.fields;
     const effectiveStatus: ConversationStatus =
-      f.status === 'paused' &&
+      f.pause_status === 'paused' &&
       f.pause_until &&
       new Date(f.pause_until).getTime() < Date.now()
         ? 'bot'
-        : (f.status ?? 'bot');
+        : (f.pause_status ?? 'bot');
 
     return {
       status: effectiveStatus,
+      lifecycleStatus: f.status ?? 'New',
       lastIntent: f.last_intent ?? null,
       pendingDates: this.parsePending(f.pending_dates),
       customerName: f.customer_name ?? null,
@@ -90,14 +112,70 @@ export class ConversationService {
     status: ConversationStatus,
     options: { pauseForMinutes?: number } = {},
   ): Promise<void> {
-    const fields: ConversationFields = { phone, status };
+    const fields: ConversationFields = {
+      phone,
+      pause_status: status,
+      last_activity: new Date().toISOString(),
+    };
     if (options.pauseForMinutes !== undefined) {
       fields.pause_until = new Date(
         Date.now() + options.pauseForMinutes * 60_000,
       ).toISOString();
     }
     await this.upsert(phone, fields);
-    this.logger.info('conversation', 'status updated', { phone, status });
+    this.logger.info('conversation', 'pause status updated', { phone, status });
+  }
+
+  async setLifecycleStatus(
+    phone: string,
+    status: LifecycleStatus,
+  ): Promise<void> {
+    await this.upsert(phone, {
+      phone,
+      status,
+      last_activity: new Date().toISOString(),
+    });
+    this.logger.info('conversation', 'lifecycle status updated', {
+      phone,
+      status,
+    });
+  }
+
+  async recordQuote(
+    phone: string,
+    datesRequested: string,
+    priceQuoted: number,
+    availabilityResult: AvailabilityResult,
+  ): Promise<void> {
+    await this.upsert(phone, {
+      phone,
+      dates_requested: datesRequested,
+      price_quoted: priceQuoted,
+      availability_result: availabilityResult,
+      last_activity: new Date().toISOString(),
+    });
+  }
+
+  async recordEmail(phone: string, email: string): Promise<void> {
+    await this.upsert(phone, {
+      phone,
+      email,
+      last_activity: new Date().toISOString(),
+    });
+  }
+
+  async markFollowUpSent(phone: string, stage: '24h' | '7d'): Promise<void> {
+    const row = await this.findRow(phone);
+    const current =
+      (row?.fields.follow_up_count as number | undefined) ?? 0;
+    const patch: ConversationFields = {
+      phone,
+      follow_up_count: current + 1,
+      last_activity: new Date().toISOString(),
+    };
+    if (stage === '24h') patch.follow_up_24h_sent = true;
+    else patch.follow_up_7d_sent = true;
+    await this.upsert(phone, patch);
   }
 
   async updateContext(
@@ -108,7 +186,10 @@ export class ConversationService {
       customerName?: string | null;
     },
   ): Promise<void> {
-    const fields: ConversationFields = { phone };
+    const fields: ConversationFields = {
+      phone,
+      last_activity: new Date().toISOString(),
+    };
     if (patch.lastIntent !== undefined) fields.last_intent = patch.lastIntent;
     if (patch.pendingDates !== undefined) {
       fields.pending_dates = patch.pendingDates
@@ -173,7 +254,19 @@ export class ConversationService {
         fields,
       );
     } else {
-      await this.airtable.create<ConversationFields>('Conversations', fields);
+      // Defaults applied only on initial creation.
+      const initial: ConversationFields = {
+        status: 'New',
+        enquiry_source: 'whatsapp',
+        follow_up_count: 0,
+        follow_up_24h_sent: false,
+        follow_up_7d_sent: false,
+        ...fields,
+      };
+      await this.airtable.create<ConversationFields>(
+        'Conversations',
+        initial,
+      );
     }
   }
 

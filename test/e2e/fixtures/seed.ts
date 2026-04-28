@@ -36,6 +36,8 @@ const TEMPLATES = [
   'long_stay_manual_pricing',
   'discount_request',
   'group_size_confirmation',
+  'followup_24h',
+  'followup_7d',
   'human_request_handoff',
   'complaint_handoff',
   'unclear_handoff',

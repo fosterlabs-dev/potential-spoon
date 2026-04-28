@@ -69,7 +69,7 @@ describe('Scenario 16 — Edge cases & failure modes', () => {
     h.airtable.seed('Conversations', [
       {
         phone: CUSTOMER,
-        status: 'paused',
+        pause_status: 'paused',
         pause_until: new Date(Date.now() + 60 * 60_000).toISOString(),
       },
     ]);

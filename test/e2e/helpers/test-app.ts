@@ -6,6 +6,9 @@ import { AvailabilityService } from '../../../src/availability/availability.serv
 import { AvailabilityModule } from '../../../src/availability/availability.module';
 import { BookingRulesModule } from '../../../src/booking-rules/booking-rules.module';
 import { ConversationModule } from '../../../src/conversation/conversation.module';
+import { FollowUpsCronService } from '../../../src/follow-ups/follow-ups-cron.service';
+import { FollowUpsModule } from '../../../src/follow-ups/follow-ups.module';
+import { FollowUpsService } from '../../../src/follow-ups/follow-ups.service';
 import { HoldsCronService } from '../../../src/holds/holds-cron.service';
 import { HoldsModule } from '../../../src/holds/holds.module';
 import { HoldsService } from '../../../src/holds/holds.service';
@@ -32,6 +35,8 @@ export type Harness = {
   handler: MessageHandlerService;
   whatsapp: WhatsappService;
   holdsCron: HoldsCronService;
+  followUpsCron: FollowUpsCronService;
+  followUps: FollowUpsService;
   response: ResponseService;
   airtable: FakeAirtable;
   parser: FakeParser;
@@ -81,6 +86,7 @@ export async function buildHarness(): Promise<Harness> {
       MessageLogModule,
       WhatsappModule,
       HoldsModule,
+      FollowUpsModule,
       OrchestratorModule,
     ],
   })
@@ -100,6 +106,8 @@ export async function buildHarness(): Promise<Harness> {
   const handler = app.get(MessageHandlerService);
   const whatsapp = app.get(WhatsappService);
   const holdsCron = app.get(HoldsCronService);
+  const followUpsCron = app.get(FollowUpsCronService);
+  const followUps = app.get(FollowUpsService);
   const response = app.get(ResponseService);
 
   const renderSpy = jest.spyOn(response, 'render');
@@ -108,6 +116,8 @@ export async function buildHarness(): Promise<Harness> {
     handler,
     whatsapp,
     holdsCron,
+    followUpsCron,
+    followUps,
     response,
     airtable,
     parser,

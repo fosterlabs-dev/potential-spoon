@@ -7,6 +7,7 @@ import {
   ParsedCommand,
   PendingDates,
 } from '../conversation/conversation.service';
+import { FollowUpsService } from '../follow-ups/follow-ups.service';
 import { HoldsService } from '../holds/holds.service';
 import { KnowledgeBaseService } from '../knowledge-base/knowledge-base.service';
 import { LoggerService } from '../logger/logger.service';
@@ -41,6 +42,7 @@ export class MessageHandlerService {
     private readonly pricing: PricingService,
     private readonly bookingRules: BookingRulesService,
     private readonly holds: HoldsService,
+    private readonly followUps: FollowUpsService,
     private readonly response: ResponseService,
     private readonly whatsapp: WhatsappService,
     private readonly conversation: ConversationService,
@@ -65,6 +67,16 @@ export class MessageHandlerService {
       }
       await this.runOwnerCommand(cmd);
       return;
+    }
+
+    // Any customer reply cancels their open follow-up sequence.
+    try {
+      await this.followUps.cancel(msg.from);
+    } catch (err) {
+      this.logger.warn('follow-ups', 'cancel on inbound failed', {
+        from: msg.from,
+        error: (err as Error).message,
+      });
     }
 
     const state = await this.conversation.getState(msg.from);
@@ -164,6 +176,14 @@ export class MessageHandlerService {
 
       case 'booking_confirmation':
         await this.handoff(from, '', 'booking_confirmed_handoff', { name });
+        try {
+          await this.conversation.setLifecycleStatus(from, 'Booked');
+        } catch (err) {
+          this.logger.warn('conversation', 'set Booked failed', {
+            from,
+            error: (err as Error).message,
+          });
+        }
         return;
 
       case 'hold_request':
@@ -229,6 +249,8 @@ export class MessageHandlerService {
       ? false
       : await this.availability.isRangeAvailable(merged.checkIn, merged.checkOut);
 
+    const datesLabel = `${this.isoDate(merged.checkIn)} → ${this.isoDate(merged.checkOut)}`;
+
     if (!icalOk) {
       await this.reply(from, 'availability_no_handoff', {
         name,
@@ -236,6 +258,7 @@ export class MessageHandlerService {
         check_out: this.formatDate(merged.checkOut),
         month: this.monthName(merged.checkIn),
       });
+      await this.recordQuoteSafe(from, datesLabel, 0, 'unavailable');
       return;
     }
 
@@ -255,6 +278,17 @@ export class MessageHandlerService {
         ? 'september_wine_harvest_note'
         : undefined,
     );
+
+    await this.recordQuoteSafe(from, datesLabel, quote.total, 'available');
+
+    try {
+      await this.followUps.schedule(from);
+    } catch (err) {
+      this.logger.warn('follow-ups', 'schedule after quote failed', {
+        from,
+        error: (err as Error).message,
+      });
+    }
 
     if (highIntentSignal) {
       await this.reply(from, 'hold_offer_post_quote', {
@@ -427,6 +461,39 @@ export class MessageHandlerService {
     }
     await this.whatsapp.sendMessage(to, text, options);
     await this.messageLog.log(to, 'out', text);
+    await this.markResponded(to);
+  }
+
+  private async markResponded(phone: string): Promise<void> {
+    try {
+      await this.conversation.setLifecycleStatus(phone, 'Responded');
+    } catch (err) {
+      this.logger.warn('conversation', 'set Responded failed', {
+        phone,
+        error: (err as Error).message,
+      });
+    }
+  }
+
+  private async recordQuoteSafe(
+    phone: string,
+    datesRequested: string,
+    priceQuoted: number,
+    result: 'available' | 'unavailable' | 'pending',
+  ): Promise<void> {
+    try {
+      await this.conversation.recordQuote(
+        phone,
+        datesRequested,
+        priceQuoted,
+        result,
+      );
+    } catch (err) {
+      this.logger.warn('conversation', 'recordQuote failed', {
+        phone,
+        error: (err as Error).message,
+      });
+    }
   }
 
   private async notifyOwner(text: string): Promise<void> {

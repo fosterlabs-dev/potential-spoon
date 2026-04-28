@@ -2,6 +2,7 @@ import { ConfigService } from '@nestjs/config';
 import { AvailabilityService } from '../availability/availability.service';
 import { BookingRulesService, RulesValidation } from '../booking-rules/booking-rules.service';
 import { ConversationService } from '../conversation/conversation.service';
+import { FollowUpsService } from '../follow-ups/follow-ups.service';
 import { HoldsService } from '../holds/holds.service';
 import { KnowledgeBaseService } from '../knowledge-base/knowledge-base.service';
 import { LoggerService } from '../logger/logger.service';
@@ -117,6 +118,12 @@ const makeHolds = (hasOverlap = false): HoldsService =>
     createHold: jest.fn().mockResolvedValue({ id: 'rec1', fields: {} }),
   }) as unknown as HoldsService;
 
+const makeFollowUps = (): FollowUpsService =>
+  ({
+    schedule: jest.fn().mockResolvedValue({ id: 'fu1', fields: {} }),
+    cancel: jest.fn().mockResolvedValue(undefined),
+  }) as unknown as FollowUpsService;
+
 const build = (
   over: {
     parser?: ParserService;
@@ -124,6 +131,7 @@ const build = (
     pricing?: PricingService;
     bookingRules?: BookingRulesService;
     holds?: HoldsService;
+    followUps?: FollowUpsService;
     response?: ResponseService;
     whatsapp?: WhatsappService;
     conversation?: ConversationService;
@@ -139,6 +147,7 @@ const build = (
     over.pricing ?? makePricing(),
     over.bookingRules ?? makeBookingRules(),
     over.holds ?? makeHolds(),
+    over.followUps ?? makeFollowUps(),
     over.response ?? makeResponse(),
     over.whatsapp ?? makeWhatsapp(),
     over.conversation ?? makeConversation(),
@@ -664,6 +673,46 @@ describe('MessageHandlerService.handle — other intents', () => {
       'unclear_handoff',
       expect.any(Object),
     );
+  });
+});
+
+describe('MessageHandlerService.handle — follow-up sequence wiring', () => {
+  it('schedules a follow-up after sending availability_yes_quote', async () => {
+    const parser = makeParser({
+      intent: 'availability_inquiry',
+      checkIn: SUN_CHECK_IN,
+      checkOut: SUN_CHECK_OUT,
+    });
+    const followUps = makeFollowUps();
+    const handler = build({ parser, followUps });
+
+    await handler.handle({ from: CUSTOMER, text: 'is Jul 6-13 free?' });
+
+    expect(followUps.schedule).toHaveBeenCalledWith(CUSTOMER);
+  });
+
+  it('does not schedule a follow-up when dates are unavailable', async () => {
+    const parser = makeParser({
+      intent: 'availability_inquiry',
+      checkIn: SUN_CHECK_IN,
+      checkOut: SUN_CHECK_OUT,
+    });
+    const availability = makeAvailability(false);
+    const followUps = makeFollowUps();
+    const handler = build({ parser, availability, followUps });
+
+    await handler.handle({ from: CUSTOMER, text: 'is Jul 6-13 free?' });
+
+    expect(followUps.schedule).not.toHaveBeenCalled();
+  });
+
+  it('cancels open follow-up sequences on every inbound customer message', async () => {
+    const followUps = makeFollowUps();
+    const handler = build({ followUps });
+
+    await handler.handle({ from: CUSTOMER, text: 'hi' });
+
+    expect(followUps.cancel).toHaveBeenCalledWith(CUSTOMER);
   });
 });
 
