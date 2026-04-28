@@ -20,6 +20,7 @@ const PAUSE_ON_HANDOFF_MIN = 60;
 const HISTORY_LIMIT = 6;
 const SEPTEMBER = 8; // UTC month index
 const KB_CONFIDENCE_THRESHOLD = 0.7;
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 type IncomingMessage = { from: string; text: string };
 
@@ -250,7 +251,7 @@ export class MessageHandlerService {
         nights: quote.nights,
         price: this.formatPrice(quote.total),
       },
-      this.shouldAppendHarvest(merged.checkIn)
+      this.shouldAppendHarvest(merged.checkIn, merged.checkOut)
         ? 'september_wine_harvest_note'
         : undefined,
     );
@@ -532,7 +533,10 @@ export class MessageHandlerService {
     return d.toLocaleDateString('en-GB', { month: 'long', timeZone: 'UTC' });
   }
 
-  private shouldAppendHarvest(checkIn: Date): boolean {
-    return checkIn.getUTCMonth() === SEPTEMBER;
+  private shouldAppendHarvest(checkIn: Date, checkOut: Date): boolean {
+    for (let t = checkIn.getTime(); t < checkOut.getTime(); t += DAY_MS) {
+      if (new Date(t).getUTCMonth() === SEPTEMBER) return true;
+    }
+    return false;
   }
 }
