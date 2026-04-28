@@ -316,11 +316,12 @@ export class MessageHandlerService {
       return;
     }
 
-    await this.holds.createHold(from, merged.checkIn, merged.checkOut);
+    const hold = await this.holds.createHold(from, merged.checkIn, merged.checkOut);
     await this.reply(from, 'hold_confirmed', {
       name,
       check_in: this.formatDate(merged.checkIn),
       check_out: this.formatDate(merged.checkOut),
+      hold_expiry: this.formatDate(new Date(hold.fields.hold_expires_at)),
     });
   }
 

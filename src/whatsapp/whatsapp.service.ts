@@ -1,90 +1,62 @@
-import { Injectable } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import axios, { AxiosError } from 'axios';
+import { Inject, Injectable } from '@nestjs/common';
 import { ConversationService } from '../conversation/conversation.service';
 import { LoggerService } from '../logger/logger.service';
+import type { IncomingMessage, WhatsAppProvider } from './providers/provider.interface';
 
-const GRAPH_API_BASE = 'https://graph.facebook.com/v20.0';
-const RETRY_DELAY_MS = 500;
+export const WHATSAPP_PROVIDER = 'WHATSAPP_PROVIDER';
 
 export type SendOptions = { override?: boolean };
 
 @Injectable()
 export class WhatsappService {
-  private readonly url: string;
-  private readonly accessToken: string;
-
   constructor(
-    config: ConfigService,
+    @Inject(WHATSAPP_PROVIDER) private readonly provider: WhatsAppProvider,
     private readonly logger: LoggerService,
     private readonly conversation: ConversationService,
-  ) {
-    const phoneId = config.get<string>('WHATSAPP_PHONE_NUMBER_ID');
-    const token = config.get<string>('WHATSAPP_ACCESS_TOKEN');
-    if (!phoneId || !token) {
-      throw new Error(
-        'WHATSAPP_PHONE_NUMBER_ID and WHATSAPP_ACCESS_TOKEN must be set',
-      );
+  ) {}
+
+  async sendMessage(to: string, text: string, options: SendOptions = {}): Promise<void> {
+    if (!options.override && !(await this.conversation.canSendBot(to))) {
+      this.logger.warn('whatsapp', 'skipped send: conversation not in bot mode', { to });
+      return;
     }
-    this.url = `${GRAPH_API_BASE}/${phoneId}/messages`;
-    this.accessToken = token;
+    return this.provider.sendMessage(to, text);
   }
 
-  async sendMessage(
+  async sendTemplate(
     to: string,
-    text: string,
+    templateName: string,
+    vars: Record<string, string>,
     options: SendOptions = {},
   ): Promise<void> {
     if (!options.override && !(await this.conversation.canSendBot(to))) {
-      this.logger.warn('whatsapp', 'skipped send: conversation not in bot mode', {
-        to,
-      });
+      this.logger.warn('whatsapp', 'skipped template: conversation not in bot mode', { to });
       return;
     }
+    return this.provider.sendTemplate(to, templateName, vars);
+  }
 
-    const payload = {
-      messaging_product: 'whatsapp',
-      to,
-      type: 'text',
-      text: { body: text },
-    };
-    const headers = {
-      Authorization: `Bearer ${this.accessToken}`,
-      'Content-Type': 'application/json',
-    };
-
-    try {
-      const res = await this.post(payload, headers);
-      const id = res.data?.messages?.[0]?.id;
-      this.logger.info('whatsapp', 'sent message', { to, id });
-    } catch (err) {
-      const ax = err as AxiosError<{ error?: { message?: string } }>;
-      const status = ax.response?.status;
-      this.logger.error('whatsapp', 'send failed', {
-        to,
-        status,
-        error: ax.response?.data?.error?.message ?? ax.message,
-      });
-      throw err;
+  async assignToHuman(conversationId: string): Promise<void> {
+    if (this.provider.assignToHuman) {
+      await this.provider.assignToHuman(conversationId);
     }
   }
 
-  private async post(
-    payload: unknown,
-    headers: Record<string, string>,
-  ): Promise<{ data: { messages?: Array<{ id?: string }> } }> {
-    try {
-      return await axios.post(this.url, payload, { headers });
-    } catch (err) {
-      const ax = err as AxiosError;
-      if (ax.response?.status === 429) {
-        this.logger.warn('whatsapp', 'rate limited, retrying once', {
-          delayMs: RETRY_DELAY_MS,
-        });
-        await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
-        return await axios.post(this.url, payload, { headers });
-      }
-      throw err;
+  parseWebhook(payload: unknown): IncomingMessage | null {
+    return this.provider.parseWebhook(payload);
+  }
+
+  validateWebhookSignature(
+    raw: Buffer,
+    headers: Record<string, string | undefined>,
+  ): boolean {
+    return this.provider.validateWebhookSignature(raw, headers);
+  }
+
+  verifyWebhook(mode: string, token: string, challenge: string): string {
+    if (!this.provider.verifyWebhook) {
+      throw new Error('webhook verification not supported by this provider');
     }
+    return this.provider.verifyWebhook(mode, token, challenge);
   }
 }

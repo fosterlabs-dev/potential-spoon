@@ -158,7 +158,7 @@ const TEMPLATES: TemplateRow[] = [
   {
     key: 'hold_confirmed',
     variant: 1,
-    text: `Hi lovely — I've held {check_in} to {check_out} for you.\n\nThose dates are yours until {hold_expiry} (5 days from today). I'll drop you a gentle reminder before then.\n\nIf you'd like to confirm sooner, just let me know.\n\nMany thanks\nwww.bontemaison.com`,
+    text: `Hi, lovely — I've held {check_in} to {check_out} for you.\nThose dates are yours until {hold_expiry} (5 days from today). I'll drop you a gentle reminder before then.\nIf you'd like to confirm sooner, just let me know.\nMany thanks,\nJim\nwww.bontemaison.com`,
   },
   {
     key: 'hold_confirmed',
