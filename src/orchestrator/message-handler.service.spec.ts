@@ -7,6 +7,7 @@ import { HoldsService } from '../holds/holds.service';
 import { KnowledgeBaseService } from '../knowledge-base/knowledge-base.service';
 import { LoggerService } from '../logger/logger.service';
 import { MessageLogService } from '../messagelog/messagelog.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { ParseResult, ParserService } from '../parser/parser.service';
 import { PricingService } from '../pricing/pricing.service';
 import { ResponseService } from '../response/response.service';
@@ -96,6 +97,11 @@ const makeMessageLog = (): MessageLogService =>
 const makeConfig = (owner: string | undefined = OWNER): ConfigService =>
   ({ get: () => owner }) as unknown as ConfigService;
 
+const makeNotifications = (): NotificationsService =>
+  ({
+    notifyOwner: jest.fn().mockResolvedValue(undefined),
+  }) as unknown as NotificationsService;
+
 const makeKnowledgeBase = (
   overrides: Partial<KnowledgeBaseService> = {},
 ): KnowledgeBaseService =>
@@ -137,6 +143,7 @@ const build = (
     conversation?: ConversationService;
     messageLog?: MessageLogService;
     knowledgeBase?: KnowledgeBaseService;
+    notifications?: NotificationsService;
     logger?: LoggerService;
     config?: ConfigService;
   } = {},
@@ -153,6 +160,7 @@ const build = (
     over.conversation ?? makeConversation(),
     over.messageLog ?? makeMessageLog(),
     over.knowledgeBase ?? makeKnowledgeBase(),
+    over.notifications ?? makeNotifications(),
     over.logger ?? makeLogger(),
     over.config ?? makeConfig(),
   );
@@ -195,18 +203,17 @@ describe('MessageHandlerService.handle — owner commands', () => {
         .mockReturnValue({ command: 'pause', minutes: 30 }),
       setStatus: jest.fn().mockResolvedValue(undefined),
     });
-    const whatsapp = makeWhatsapp();
-    const handler = build({ conversation, whatsapp });
+    const notifications = makeNotifications();
+    const handler = build({ conversation, notifications });
 
     await handler.handle({ from: OWNER, text: '/pause 30' });
 
     expect(conversation.setStatus).toHaveBeenCalledWith(OWNER, 'paused', {
       pauseForMinutes: 30,
     });
-    expect(whatsapp.sendMessage).toHaveBeenCalledWith(
-      OWNER,
+    expect(notifications.notifyOwner).toHaveBeenCalledWith(
       expect.stringContaining('paused'),
-      { override: true },
+      expect.objectContaining({ reason: 'owner_command' }),
     );
   });
 
@@ -218,18 +225,17 @@ describe('MessageHandlerService.handle — owner commands', () => {
         minutes: 1440,
       }),
     });
-    const whatsapp = makeWhatsapp();
-    const handler = build({ conversation, whatsapp });
+    const notifications = makeNotifications();
+    const handler = build({ conversation, notifications });
 
     await handler.handle({ from: OWNER, text: `/pause ${CUSTOMER} 1440` });
 
     expect(conversation.setStatus).toHaveBeenCalledWith(CUSTOMER, 'paused', {
       pauseForMinutes: 1440,
     });
-    expect(whatsapp.sendMessage).toHaveBeenCalledWith(
-      OWNER,
+    expect(notifications.notifyOwner).toHaveBeenCalledWith(
       expect.stringContaining(CUSTOMER),
-      { override: true },
+      expect.objectContaining({ reason: 'owner_command' }),
     );
   });
 
@@ -258,15 +264,14 @@ describe('MessageHandlerService.handle — owner commands', () => {
         customerName: null,
       }),
     });
-    const whatsapp = makeWhatsapp();
-    const handler = build({ conversation, whatsapp });
+    const notifications = makeNotifications();
+    const handler = build({ conversation, notifications });
 
     await handler.handle({ from: OWNER, text: `/status ${CUSTOMER}` });
 
-    expect(whatsapp.sendMessage).toHaveBeenCalledWith(
-      OWNER,
+    expect(notifications.notifyOwner).toHaveBeenCalledWith(
       expect.stringContaining('paused'),
-      { override: true },
+      expect.objectContaining({ reason: 'owner_command' }),
     );
   });
 
@@ -532,8 +537,8 @@ describe('MessageHandlerService.handle — discount detection', () => {
     });
     const response = makeResponse();
     const conversation = makeConversation();
-    const whatsapp = makeWhatsapp();
-    const handler = build({ parser, response, conversation, whatsapp });
+    const notifications = makeNotifications();
+    const handler = build({ parser, response, conversation, notifications });
 
     await handler.handle({ from: CUSTOMER, text: 'can I get a better rate?' });
 
@@ -544,10 +549,9 @@ describe('MessageHandlerService.handle — discount detection', () => {
     expect(conversation.setStatus).toHaveBeenCalledWith(CUSTOMER, 'paused', {
       pauseForMinutes: 60,
     });
-    expect(whatsapp.sendMessage).toHaveBeenCalledWith(
-      OWNER,
+    expect(notifications.notifyOwner).toHaveBeenCalledWith(
       expect.any(String),
-      { override: true },
+      expect.objectContaining({ reason: 'discount_request', from: CUSTOMER }),
     );
   });
 
@@ -601,8 +605,8 @@ describe('MessageHandlerService.handle — other intents', () => {
     const parser = makeParser({ intent: 'booking_confirmation' });
     const response = makeResponse();
     const conversation = makeConversation();
-    const whatsapp = makeWhatsapp();
-    const handler = build({ parser, response, conversation, whatsapp });
+    const notifications = makeNotifications();
+    const handler = build({ parser, response, conversation, notifications });
 
     await handler.handle({ from: CUSTOMER, text: "let's book" });
 
@@ -613,10 +617,9 @@ describe('MessageHandlerService.handle — other intents', () => {
     expect(conversation.setStatus).toHaveBeenCalledWith(CUSTOMER, 'paused', {
       pauseForMinutes: 60,
     });
-    expect(whatsapp.sendMessage).toHaveBeenCalledWith(
-      OWNER,
+    expect(notifications.notifyOwner).toHaveBeenCalledWith(
       expect.stringContaining(CUSTOMER),
-      { override: true },
+      expect.objectContaining({ reason: 'booking_confirmation', from: CUSTOMER }),
     );
   });
 
@@ -728,14 +731,14 @@ describe('MessageHandlerService.handle — fail-safe paths', () => {
     } as unknown as AvailabilityService;
     const conversation = makeConversation();
     const response = makeResponse();
-    const whatsapp = makeWhatsapp();
+    const notifications = makeNotifications();
     const logger = makeLogger();
     const handler = build({
       parser,
       availability,
       conversation,
       response,
-      whatsapp,
+      notifications,
       logger,
     });
 
@@ -748,10 +751,13 @@ describe('MessageHandlerService.handle — fail-safe paths', () => {
     expect(conversation.setStatus).toHaveBeenCalledWith(CUSTOMER, 'paused', {
       pauseForMinutes: 60,
     });
-    expect(whatsapp.sendMessage).toHaveBeenCalledWith(
-      OWNER,
+    expect(notifications.notifyOwner).toHaveBeenCalledWith(
       expect.any(String),
-      { override: true },
+      expect.objectContaining({
+        reason: 'orchestrator_error',
+        from: CUSTOMER,
+        extra: expect.objectContaining({ error: 'ical down' }),
+      }),
     );
     expect(logger.error).toHaveBeenCalled();
   });

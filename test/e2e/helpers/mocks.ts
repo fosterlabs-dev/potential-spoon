@@ -198,6 +198,33 @@ export class FakeAvailability {
   });
 }
 
+// --- Email service fake ---
+
+export type SentEmail = { to: string; subject: string; body: string };
+
+export class FakeEmailService {
+  public sent: SentEmail[] = [];
+  private throwError: Error | null = null;
+
+  reset(): void {
+    this.sent = [];
+    this.throwError = null;
+  }
+
+  fail(err: Error): void {
+    this.throwError = err;
+  }
+
+  isConfigured(): boolean {
+    return true;
+  }
+
+  send = jest.fn(async (msg: SentEmail): Promise<void> => {
+    if (this.throwError) throw this.throwError;
+    this.sent.push({ ...msg });
+  });
+}
+
 // --- Whatsapp provider fake ---
 
 export type SentMessage = { to: string; text: string };

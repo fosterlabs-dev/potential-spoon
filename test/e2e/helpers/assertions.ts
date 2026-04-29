@@ -33,6 +33,22 @@ export function expectJimNotified(h: Harness): void {
   }
 }
 
+export function expectJimEmailed(h: Harness, subjectContains?: string): void {
+  if (h.email.sent.length === 0) {
+    throw new Error('expected owner to be emailed, no emails recorded');
+  }
+  if (
+    subjectContains &&
+    !h.email.sent.some((e) => e.subject.includes(subjectContains))
+  ) {
+    throw new Error(
+      `expected an email with subject containing "${subjectContains}". Got: ${h.email.sent
+        .map((e) => e.subject)
+        .join(' | ')}`,
+    );
+  }
+}
+
 export function expectNoMessageSent(
   h: Harness,
   to: string = CUSTOMER,

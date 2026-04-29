@@ -12,6 +12,7 @@ import { HoldsService } from '../holds/holds.service';
 import { KnowledgeBaseService } from '../knowledge-base/knowledge-base.service';
 import { LoggerService } from '../logger/logger.service';
 import { MessageLogService } from '../messagelog/messagelog.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { Intent, ParserService } from '../parser/parser.service';
 import { PricingService } from '../pricing/pricing.service';
 import { ResponseService, TemplateVars } from '../response/response.service';
@@ -48,6 +49,7 @@ export class MessageHandlerService {
     private readonly conversation: ConversationService,
     private readonly messageLog: MessageLogService,
     private readonly knowledgeBase: KnowledgeBaseService,
+    private readonly notifications: NotificationsService,
     private readonly logger: LoggerService,
     config: ConfigService,
   ) {
@@ -126,13 +128,18 @@ export class MessageHandlerService {
         parsed.highIntentSignal,
       );
     } catch (err) {
+      const error = (err as Error).message;
       this.logger.error('conversation', 'message handling failed', {
         from: msg.from,
-        error: (err as Error).message,
+        error,
       });
-      await this.handoff(msg.from, msg.text, 'unclear_handoff', {
-        name: storedName ?? '',
-      });
+      await this.handoff(
+        msg.from,
+        msg.text,
+        'unclear_handoff',
+        { name: storedName ?? '' },
+        { reason: 'orchestrator_error', extra: { error } },
+      );
     }
   }
 
@@ -259,6 +266,14 @@ export class MessageHandlerService {
         month: this.monthName(merged.checkIn),
       });
       await this.recordQuoteSafe(from, datesLabel, 0, 'unavailable');
+      await this.notifications.notifyOwner(
+        `dates unavailable for ${from} (${datesLabel}) — Jim may want to suggest alternatives`,
+        {
+          reason: held ? 'hold_conflict' : 'dates_unavailable',
+          from,
+          extra: { dates: datesLabel, held },
+        },
+      );
       return;
     }
 
@@ -342,12 +357,21 @@ export class MessageHandlerService {
       : await this.availability.isRangeAvailable(merged.checkIn, merged.checkOut);
 
     if (!icalOk) {
+      const datesLabel = `${this.isoDate(merged.checkIn)} → ${this.isoDate(merged.checkOut)}`;
       await this.reply(from, 'availability_no_handoff', {
         name,
         check_in: this.formatDate(merged.checkIn),
         check_out: this.formatDate(merged.checkOut),
         month: this.monthName(merged.checkIn),
       });
+      await this.notifications.notifyOwner(
+        `hold request blocked — dates unavailable for ${from} (${datesLabel})`,
+        {
+          reason: held ? 'hold_conflict' : 'dates_unavailable',
+          from,
+          extra: { dates: datesLabel, held, intent: 'hold_request' },
+        },
+      );
       return;
     }
 
@@ -417,27 +441,35 @@ export class MessageHandlerService {
         'paused',
         cmd.minutes ? { pauseForMinutes: cmd.minutes } : {},
       );
-      await this.notifyOwner(
+      await this.notifications.notifyOwner(
         cmd.minutes
           ? `paused ${target} for ${cmd.minutes} min`
           : `paused ${target}`,
+        { reason: 'owner_command', extra: { command: 'pause', target } },
       );
       return;
     }
     if (cmd.command === 'release') {
       await this.conversation.setStatus(target, 'human');
-      await this.notifyOwner(`${target} released to human`);
+      await this.notifications.notifyOwner(`${target} released to human`, {
+        reason: 'owner_command',
+        extra: { command: 'release', target },
+      });
       return;
     }
     if (cmd.command === 'status') {
       const state = await this.conversation.getState(target);
-      await this.notifyOwner(
+      await this.notifications.notifyOwner(
         `${target}: ${state.status}${state.lastIntent ? ` (last: ${state.lastIntent})` : ''}`,
+        { reason: 'owner_command', extra: { command: 'status', target } },
       );
       return;
     }
     await this.conversation.setStatus(target, 'bot');
-    await this.notifyOwner(`${target} bot resumed`);
+    await this.notifications.notifyOwner(`${target} bot resumed`, {
+      reason: 'owner_command',
+      extra: { command: 'resume', target },
+    });
   }
 
   private async reply(
@@ -496,16 +528,12 @@ export class MessageHandlerService {
     }
   }
 
-  private async notifyOwner(text: string): Promise<void> {
-    if (!this.ownerPhone) return;
-    await this.whatsapp.sendMessage(this.ownerPhone, text, { override: true });
-  }
-
   private async handoff(
     from: string,
     originalText: string,
     templateKey: string,
     vars: TemplateVars = {},
+    notification?: { reason?: string; extra?: Record<string, unknown> },
   ): Promise<void> {
     try {
       await this.conversation.setStatus(from, 'paused', {
@@ -528,18 +556,35 @@ export class MessageHandlerService {
       });
     }
 
-    if (this.ownerPhone) {
-      try {
-        await this.whatsapp.sendMessage(
-          this.ownerPhone,
-          `needs attention from ${from}${originalText ? `: ${originalText}` : ''}`,
-          { override: true },
-        );
-      } catch (err) {
-        this.logger.error('conversation', 'failed to notify owner', {
-          error: (err as Error).message,
-        });
-      }
+    const reason = notification?.reason ?? this.handoffReason(templateKey);
+    await this.notifications.notifyOwner(
+      `needs attention: ${reason}${from ? ` (${from})` : ''}`,
+      {
+        reason,
+        from,
+        message: originalText || undefined,
+        extra: notification?.extra,
+      },
+    );
+  }
+
+  private handoffReason(templateKey: string): string {
+    switch (templateKey) {
+      case 'discount_request':
+        return 'discount_request';
+      case 'long_stay_manual_pricing':
+        return 'long_stay_manual_pricing';
+      case 'faq_unknown_handoff':
+        return 'faq_unknown';
+      case 'complaint_handoff':
+        return 'complaint';
+      case 'human_request_handoff':
+        return 'human_request';
+      case 'booking_confirmed_handoff':
+        return 'booking_confirmation';
+      case 'unclear_handoff':
+      default:
+        return 'unclear_or_off_topic';
     }
   }
 

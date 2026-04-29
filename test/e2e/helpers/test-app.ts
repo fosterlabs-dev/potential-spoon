@@ -15,6 +15,8 @@ import { HoldsService } from '../../../src/holds/holds.service';
 import { KnowledgeBaseModule } from '../../../src/knowledge-base/knowledge-base.module';
 import { LoggerModule } from '../../../src/logger/logger.module';
 import { MessageLogModule } from '../../../src/messagelog/messagelog.module';
+import { EmailService } from '../../../src/notifications/email.service';
+import { NotificationsModule } from '../../../src/notifications/notifications.module';
 import { OrchestratorModule } from '../../../src/orchestrator/orchestrator.module';
 import { MessageHandlerService } from '../../../src/orchestrator/message-handler.service';
 import { ParserModule } from '../../../src/parser/parser.module';
@@ -26,7 +28,14 @@ import { TemplatesModule } from '../../../src/templates/templates.module';
 import { WHATSAPP_PROVIDER, WhatsappService } from '../../../src/whatsapp/whatsapp.service';
 import { WhatsappModule } from '../../../src/whatsapp/whatsapp.module';
 import { seedAll } from '../fixtures/seed';
-import { FakeAirtable, FakeAvailability, FakeParser, FakeWhatsAppProvider } from './mocks';
+import {
+  FakeAirtable,
+  FakeAvailability,
+  FakeEmailService,
+  FakeParser,
+  FakeWhatsAppProvider,
+} from './mocks';
+import { TranscriptRecorder, writeTranscript } from './transcript';
 
 export const OWNER = '447000000000';
 export const CUSTOMER = '447111111111';
@@ -42,6 +51,7 @@ export type Harness = {
   parser: FakeParser;
   availability: FakeAvailability;
   provider: FakeWhatsAppProvider;
+  email: FakeEmailService;
   // Spies on render so assertions can introspect template usage
   renderCalls: () => string[];
   renderArgs: () => Array<{ key: string; vars: Record<string, unknown> }>;
@@ -50,6 +60,7 @@ export type Harness = {
 
 export async function buildHarness(): Promise<Harness> {
   process.env.OWNER_PHONE = OWNER;
+  process.env.OWNER_EMAIL = 'owner@example.com';
   process.env.YEAR_2026_FULLY_BOOKED = 'true';
   process.env.RESPONSE_MODE = 'template';
   process.env.AIRTABLE_API_KEY = 'test';
@@ -67,6 +78,7 @@ export async function buildHarness(): Promise<Harness> {
   const parser = new FakeParser();
   const availability = new FakeAvailability();
   const provider = new FakeWhatsAppProvider();
+  const email = new FakeEmailService();
 
   seedAll(airtable);
 
@@ -87,6 +99,7 @@ export async function buildHarness(): Promise<Harness> {
       WhatsappModule,
       HoldsModule,
       FollowUpsModule,
+      NotificationsModule,
       OrchestratorModule,
     ],
   })
@@ -98,6 +111,8 @@ export async function buildHarness(): Promise<Harness> {
     .useValue(availability)
     .overrideProvider(WHATSAPP_PROVIDER)
     .useValue(provider)
+    .overrideProvider(EmailService)
+    .useValue(email)
     .compile();
 
   const app = moduleRef.createNestApplication();
@@ -110,7 +125,29 @@ export async function buildHarness(): Promise<Harness> {
   const followUps = app.get(FollowUpsService);
   const response = app.get(ResponseService);
 
-  const renderSpy = jest.spyOn(response, 'render');
+  const recorder = new TranscriptRecorder();
+
+  const origRender = response.render.bind(response);
+  const renderSpy = jest
+    .spyOn(response, 'render')
+    .mockImplementation(((key: string, vars?: Record<string, unknown>) => {
+      recorder.push({ kind: 'render', key, vars: vars ?? {} });
+      return origRender(key, vars as Parameters<typeof response.render>[1]);
+    }) as typeof response.render);
+
+  const origHandle = handler.handle.bind(handler);
+  (handler as unknown as { handle: typeof handler.handle }).handle = (async (
+    msg: Parameters<typeof handler.handle>[0],
+  ) => {
+    recorder.push({ kind: 'in', from: msg.from, text: msg.text });
+    return origHandle(msg);
+  }) as typeof handler.handle;
+
+  const origSendImpl = provider.sendMessage.getMockImplementation();
+  provider.sendMessage.mockImplementation(async (to: string, text: string) => {
+    recorder.push({ kind: 'out', to, text });
+    if (origSendImpl) await origSendImpl(to, text);
+  });
 
   return {
     handler,
@@ -123,6 +160,7 @@ export async function buildHarness(): Promise<Harness> {
     parser,
     availability,
     provider,
+    email,
     renderCalls: () => renderSpy.mock.calls.map((c) => c[0] as string),
     renderArgs: () =>
       renderSpy.mock.calls.map((c) => ({
@@ -130,6 +168,15 @@ export async function buildHarness(): Promise<Harness> {
         vars: (c[1] ?? {}) as Record<string, unknown>,
       })),
     shutdown: async () => {
+      try {
+        const state =
+          typeof expect !== 'undefined' && typeof expect.getState === 'function'
+            ? expect.getState()
+            : undefined;
+        writeTranscript(recorder, state?.currentTestName, state?.testPath);
+      } catch {
+        // never let transcript IO break a test
+      }
       await app.close();
     },
   };

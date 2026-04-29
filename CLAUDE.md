@@ -275,8 +275,17 @@ CLAUDE_MODEL=claude-haiku-4-5-20251001
 # iCal
 ICAL_URL=https://ical.promotemyplace.com/4ee2e6e0bce533ec4edd08202ce80eb9/calendar.ics
 
-# Jim's notification channel
-JIM_WHATSAPP_NUMBER=
+# Owner notifications (Phase 5)
+# Both channels are optional; notifications fire on every channel that is set.
+OWNER_PHONE=        # WhatsApp recipient + identifies owner for /pause /release /resume /status commands
+OWNER_EMAIL=        # SMTP recipient (optional)
+
+# SMTP — only required if OWNER_EMAIL is set
+SMTP_HOST=
+SMTP_PORT=587
+SMTP_USER=
+SMTP_PASS=
+SMTP_FROM=          # defaults to SMTP_USER if unset
 
 # SuperControl email integration (TBD method)
 SUPERCONTROL_IMAP_HOST=

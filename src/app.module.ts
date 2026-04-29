@@ -9,6 +9,7 @@ import { HoldsModule } from './holds/holds.module';
 import { KnowledgeBaseModule } from './knowledge-base/knowledge-base.module';
 import { LoggerModule } from './logger/logger.module';
 import { MessageLogModule } from './messagelog/messagelog.module';
+import { NotificationsModule } from './notifications/notifications.module';
 import { OrchestratorModule } from './orchestrator/orchestrator.module';
 import { ParserModule } from './parser/parser.module';
 import { PricingModule } from './pricing/pricing.module';
@@ -31,6 +32,7 @@ import { WhatsappModule } from './whatsapp/whatsapp.module';
     WhatsappModule,
     HoldsModule,
     FollowUpsModule,
+    NotificationsModule,
     OrchestratorModule,
   ],
 })

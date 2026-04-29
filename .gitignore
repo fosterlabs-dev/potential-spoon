@@ -1,6 +1,9 @@
 packages/*/package-lock.json
 sample/**/package-lock.json
 
+# e2e transcript output
+test/e2e/output/
+
 # dependencies
 node_modules/
 dist/

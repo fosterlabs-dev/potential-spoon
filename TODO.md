@@ -23,12 +23,12 @@ Resolve with Jim before building the relevant phase:
 
 | # | Question | Blocks |
 |---|---|---|
-| 1 | SuperControl integration method — IMAP or webhook? | Phase 5 |
+| 1 | SuperControl integration method — IMAP or webhook? | Phase 6 |
 | 2 | Pricing edge case — stay spanning two seasonal bands: check-in date's band? | Phase 1 |
 | 3 | Long stay threshold — strictly monthly, or any stay >3 weeks in Oct-May? | Phase 1 |
-| 4 | Jim's notification channel — WhatsApp to personal number, or email? | Phase 6 |
+| 4 | Jim's notification channel — WhatsApp to personal number, or email? | Phase 5 |
 | 5 | Hold conflict — second enquirer asks about held dates: "unavailable" or "provisionally held"? | Phase 2 |
-| 6 | Instant book timing — build toggle now in Phase 0, or defer to Phase 7? | Phase 7 |
+| 6 | Instant book timing — build toggle now in Phase 0, or defer to Phase 6? | Phase 6 |
 | 7 | Airtable access — shared base or Jim owns it from day one? | Phase 0 |
 
 ---
@@ -163,66 +163,68 @@ Build in this order — each phase should be fully working and tested before mov
 ### Phase 4 — CRM expansion
 > Full guest record for status tracking and follow-up eligibility.
 
-- [ ] **Expand `Conversations` schema** (guest_name, email, status enum, dates_requested, price_quoted, availability_result, last_intent, follow_up fields)
-- [ ] **Update all handlers** to write CRM fields on each interaction
-- [ ] **Status transitions**: New → Responded → Follow-up → Booked / Lost
-- [ ] **Phase 4 tests**
+- [x] **Expand `Conversations` schema** (guest_name, email, status enum, dates_requested, price_quoted, availability_result, last_intent, follow_up fields)
+- [x] **Update all handlers** to write CRM fields on each interaction
+- [x] **Status transitions**: New → Responded → Follow-up → Booked / Lost
+- [x] **Phase 4 tests**
   - Each intent updates the correct CRM fields
   - Status transitions fire correctly
   - Price/dates fields updated on each quote
 
 ---
 
-### Phase 5 — SuperControl email integration
-> Send a short WhatsApp nudge when SuperControl emails go out.
+### Phase 5 — Notifications to Jim
+> Escalation channel for anything the bot can't handle. Two channels: WhatsApp + email, both optional, fire on every channel that's set.
 
-*Blocked on open question #1 (IMAP vs webhook).*
+- [x] **Notifications module** (`src/notifications/`)
+  - `NotificationsService.notifyOwner(text, context?)` — fans out to WhatsApp + email
+  - `EmailService` — Nodemailer SMTP transport (no-op when SMTP envs unset)
+  - Envs: `OWNER_PHONE`, `OWNER_EMAIL`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`
+  - Fail-safe: failure on one channel logged, never crashes main flow
+- [x] **Wire escalation triggers** in orchestrator:
+  - Uncertain / off-topic (`unclear_handoff`)
+  - Outside knowledge base (`faq_unknown`)
+  - Discount request (`discount_request`)
+  - Long stay manual pricing (`long_stay_manual_pricing`)
+  - Complaint / frustration (`complaint`)
+  - Human request (`human_request`)
+  - Booking confirmation (`booking_confirmation`)
+  - Hold conflict (`hold_conflict`) — second enquirer hits held dates
+  - Unavailable dates (`dates_unavailable`) — so Jim can offer alternatives
+  - Orchestrator error (`orchestrator_error`) — includes the error message
+  - Unmatched SuperControl guest — wired in Phase 6
+- [x] **Phase 5 tests**
+  - `src/notifications/notifications.service.spec.ts` — both channels, single channel, neither, partial failure
+  - `test/e2e/scenarios/18-notifications.spec.ts` — handoff fans out, discount/unavailable/hold-conflict/error reasons
+
+---
+
+### Phase 6 — SuperControl email integration & instant book toggle
+> Send WhatsApp nudges when SuperControl emails go out, and swap the booking flow once SuperControl instant book is live.
+
+*Blocked on open questions #1 (IMAP vs webhook) and #6 (instant book timing).*
+
+**Email integration**
 
 - [ ] **Email ingestion** — IMAP monitoring OR webhook endpoint (decide with Jim first)
 - [ ] **Email parser** — classify email type: booking_confirmation / directions / pre_arrival / mid_stay / thank_you / review_request
 - [ ] **Guest matcher** — match email recipient address → `Conversations` record by email field
 - [ ] **Nudge trigger** — select correct nudge template, send via WhatsApp, dedup check
-- [ ] **Safety rule** — do not send if guest cannot be confidently matched
-- [ ] **Phase 5 tests**
-  - Each email type maps to correct nudge template
-  - Unmatched guest → no message sent, Jim notified
-  - Duplicate email event → no double send
-  - All 6 nudge types tested end-to-end
+- [ ] **Safety rule** — do not send if guest cannot be confidently matched (notify Jim instead)
 
----
-
-### Phase 6 — Notifications to Jim
-> Escalation channel for anything the bot can't handle.
-
-*Blocked on open question #4 (notification channel).*
-
-- [ ] **Notifications module** (`src/notifications/`)
-  - `notifyJim(message, context?)` helper
-  - Send to `JIM_WHATSAPP_NUMBER` (or email — confirm first)
-- [ ] **Wire escalation triggers** throughout other modules:
-  - Uncertain / low-confidence parse
-  - Outside knowledge base (faq_unknown)
-  - Discount request
-  - Long stay (Oct–May)
-  - Hold conflict
-  - Unavailable dates (so Jim can offer alternatives)
-  - Unmatched SuperControl guest
-  - Any unhandled error in orchestrator
-- [ ] **Phase 6 tests**
-  - Each trigger fires the notification
-  - Notification includes enough context (phone, message, intent)
-  - Fails silently if notification delivery fails (don't crash main flow)
-
----
-
-### Phase 7 — Instant book toggle
-> Swap booking flow once SuperControl instant book goes live.
+**Instant book toggle**
 
 - [ ] **`INSTANT_BOOK_ENABLED` env flag** — read in orchestrator
 - [ ] **Swap template**: `booking_confirmed_handoff` → `booking_confirmed_instant_book` when flag is true
-- [ ] **Phase 7 tests**
-  - Flag false → email-ask template used
-  - Flag true → website-link template used
+
+**Phase 6 tests**
+
+- [ ] Each email type maps to correct nudge template
+- [ ] Unmatched guest → no message sent, Jim notified
+- [ ] Duplicate email event → no double send
+- [ ] All 6 nudge types tested end-to-end
+- [ ] Instant book flag false → email-ask template used
+- [ ] Instant book flag true → website-link template used
 
 ---
 
