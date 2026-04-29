@@ -23,8 +23,7 @@ describe('Scenario 3 — Availability + pricing (2027)', () => {
       },
     });
     expectTemplateUsed(h, 'availability_yes_quote');
-    // weekly £4995 / 7 ≈ 713 nightly → 7 nights ≈ €4,991 (rounding)
-    expectRenderVar(h, 'availability_yes_quote', 'price', /€4,99[0-9]/);
+    expectRenderVar(h, 'availability_yes_quote', 'price', /€4,995/);
   });
 
   it('3.2 — Summer 2027 (May-June) → £3,995 weekly band', async () => {
@@ -37,7 +36,7 @@ describe('Scenario 3 — Availability + pricing (2027)', () => {
       },
     });
     expectTemplateUsed(h, 'availability_yes_quote');
-    expectRenderVar(h, 'availability_yes_quote', 'price', /€3,99[0-9]/);
+    expectRenderVar(h, 'availability_yes_quote', 'price', /€3,995/);
   });
 
   it('3.3 — 2026 dates → year_2026_redirect', async () => {

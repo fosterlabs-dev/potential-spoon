@@ -12,6 +12,10 @@ type CloudApiPayload = {
   entry?: Array<{
     changes?: Array<{
       value?: {
+        contacts?: Array<{
+          wa_id?: string;
+          profile?: { name?: string };
+        }>;
         messages?: Array<{
           from?: string;
           id?: string;
@@ -110,9 +114,17 @@ export class CloudApiProvider implements WhatsAppProvider {
     const body = payload as CloudApiPayload;
     for (const entry of body.entry ?? []) {
       for (const change of entry.changes ?? []) {
+        const contacts = change.value?.contacts ?? [];
         for (const msg of change.value?.messages ?? []) {
           if (msg.type === 'text' && msg.from && msg.text?.body) {
-            return { from: msg.from, text: msg.text.body, id: msg.id };
+            const contact = contacts.find((c) => c.wa_id === msg.from);
+            const profileName = contact?.profile?.name?.trim() || undefined;
+            return {
+              from: msg.from,
+              text: msg.text.body,
+              id: msg.id,
+              profileName,
+            };
           }
         }
       }

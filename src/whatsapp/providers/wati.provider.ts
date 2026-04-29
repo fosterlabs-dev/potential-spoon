@@ -13,6 +13,7 @@ type WatiWebhookPayload = {
   created?: string;
   timestamp?: string;
   owner?: boolean;
+  senderName?: string;
 };
 
 const MAX_MESSAGE_AGE_MS = 2 * 60 * 1000;
@@ -106,7 +107,8 @@ export class WatiProvider implements WhatsAppProvider {
       return null;
     }
 
-    return { from: body.waId, text: body.text, id: body.id };
+    const profileName = body.senderName?.trim() || undefined;
+    return { from: body.waId, text: body.text, id: body.id, profileName };
   }
 
   private messageCreatedMs(body: WatiWebhookPayload): number | null {

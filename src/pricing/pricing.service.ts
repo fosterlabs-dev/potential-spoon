@@ -3,27 +3,29 @@ import { AirtableService } from '../airtable/airtable.service';
 import { LoggerService } from '../logger/logger.service';
 
 export type PricingRule = {
-  startDate?: Date;
-  endDate?: Date;
-  nightlyRate: number;
-  minNights?: number;
+  startDate: Date;
+  endDate: Date;
+  weeklyRate: number;
+  minWeeks?: number;
   label?: string;
 };
 
 export type Quote = {
+  weeks: number;
   nights: number;
-  nightlyBreakdown: Array<{ date: Date; rate: number; label?: string }>;
+  weeklyRate: number;
+  label?: string;
   subtotal: number;
   total: number;
-  minNights: number;
-  meetsMinNights: boolean;
+  minWeeks: number;
+  meetsMinWeeks: boolean;
 };
 
 type PricingFields = {
   start_date?: string;
   end_date?: string;
-  nightly_rate?: number;
-  min_nights?: number;
+  weekly_rate?: number;
+  min_weeks?: number;
   label?: string;
 };
 
@@ -41,25 +43,21 @@ export class PricingService {
     const rules: PricingRule[] = [];
     for (const row of rows) {
       const f = row.fields;
-      if (typeof f.nightly_rate !== 'number') {
-        this.logger.warn('pricing', 'skipping malformed pricing row', {
-          id: row.id,
-        });
-        continue;
-      }
-      const hasStart = !!f.start_date;
-      const hasEnd = !!f.end_date;
-      if (hasStart !== hasEnd) {
+      if (
+        typeof f.weekly_rate !== 'number' ||
+        !f.start_date ||
+        !f.end_date
+      ) {
         this.logger.warn('pricing', 'skipping malformed pricing row', {
           id: row.id,
         });
         continue;
       }
       rules.push({
-        startDate: hasStart ? new Date(f.start_date!) : undefined,
-        endDate: hasEnd ? new Date(f.end_date!) : undefined,
-        nightlyRate: f.nightly_rate,
-        minNights: f.min_nights,
+        startDate: new Date(f.start_date),
+        endDate: new Date(f.end_date),
+        weeklyRate: f.weekly_rate,
+        minWeeks: f.min_weeks,
         label: f.label,
       });
     }
@@ -71,61 +69,48 @@ export class PricingService {
       throw new Error('checkOut must be after checkIn');
     }
 
-    const breakdown: Quote['nightlyBreakdown'] = [];
-    const matchingRules: PricingRule[] = [];
+    const nights = Math.round(
+      (checkOut.getTime() - checkIn.getTime()) / DAY_MS,
+    );
+    if (nights % 7 !== 0) {
+      throw new Error(
+        `stay length must be a multiple of 7 nights (got ${nights})`,
+      );
+    }
+    const weeks = nights / 7;
 
-    for (
-      let t = checkIn.getTime();
-      t < checkOut.getTime();
-      t += DAY_MS
-    ) {
-      const night = new Date(t);
-      const rule = this.pickRule(rules, night);
-      if (!rule) {
-        throw new Error(
-          `no pricing rule covers night ${night.toISOString().slice(0, 10)}`,
-        );
-      }
-      matchingRules.push(rule);
-      breakdown.push({
-        date: night,
-        rate: rule.nightlyRate,
-        label: rule.label,
-      });
+    const rule = this.pickRule(rules, checkIn);
+    if (!rule) {
+      throw new Error(
+        `no pricing rule covers check-in ${checkIn.toISOString().slice(0, 10)}`,
+      );
     }
 
-    const subtotal = breakdown.reduce((sum, n) => sum + n.rate, 0);
-    const minNights = matchingRules.reduce(
-      (max, r) => Math.max(max, r.minNights ?? 0),
-      0,
-    );
+    const subtotal = weeks * rule.weeklyRate;
+    const minWeeks = rule.minWeeks ?? 0;
 
     return {
-      nights: breakdown.length,
-      nightlyBreakdown: breakdown,
+      weeks,
+      nights,
+      weeklyRate: rule.weeklyRate,
+      label: rule.label,
       subtotal,
       total: subtotal,
-      minNights,
-      meetsMinNights: breakdown.length >= minNights,
+      minWeeks,
+      meetsMinWeeks: weeks >= minWeeks,
     };
   }
 
-  private pickRule(rules: PricingRule[], night: Date): PricingRule | undefined {
-    const t = night.getTime();
-    const dated = rules.filter(
-      (r) =>
-        r.startDate !== undefined &&
-        r.endDate !== undefined &&
-        r.startDate.getTime() <= t &&
-        r.endDate.getTime() >= t,
+  private pickRule(rules: PricingRule[], checkIn: Date): PricingRule | undefined {
+    const t = checkIn.getTime();
+    const matching = rules.filter(
+      (r) => r.startDate.getTime() <= t && r.endDate.getTime() >= t,
     );
-    if (dated.length > 0) {
-      return dated.reduce((narrowest, r) => {
-        const span = (x: PricingRule) =>
-          x.endDate!.getTime() - x.startDate!.getTime();
-        return span(r) < span(narrowest) ? r : narrowest;
-      });
-    }
-    return rules.find((r) => !r.startDate && !r.endDate);
+    if (matching.length === 0) return undefined;
+    return matching.reduce((narrowest, r) => {
+      const span = (x: PricingRule) =>
+        x.endDate.getTime() - x.startDate.getTime();
+      return span(r) < span(narrowest) ? r : narrowest;
+    });
   }
 }

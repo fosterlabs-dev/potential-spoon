@@ -1,5 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import {
+  ConversationService,
+  CrmSnapshot,
+} from '../conversation/conversation.service';
 import { LoggerService } from '../logger/logger.service';
 import { WhatsappService } from '../whatsapp/whatsapp.service';
 import { EmailService } from './email.service';
@@ -12,6 +16,26 @@ export type NotificationContext = {
   extra?: Record<string, unknown>;
 };
 
+export type ConversationNotificationOptions = {
+  message?: string;
+  intent?: string;
+  extra?: Record<string, unknown>;
+};
+
+const REASON_LABELS: Record<string, string> = {
+  discount_request: 'Discount request',
+  long_stay_manual_pricing: 'Long-stay manual pricing',
+  faq_unknown: 'FAQ unknown — needs human',
+  complaint: 'Complaint / frustration',
+  human_request: 'Guest asked for a human',
+  booking_confirmation: 'Booking confirmation',
+  unclear_or_off_topic: 'Unclear / off-topic',
+  hold_conflict: 'Hold conflict',
+  dates_unavailable: 'Dates unavailable',
+  orchestrator_error: 'Orchestrator error',
+  owner_command: 'Owner command',
+};
+
 @Injectable()
 export class NotificationsService {
   private readonly ownerPhone: string | undefined;
@@ -21,6 +45,7 @@ export class NotificationsService {
     config: ConfigService,
     private readonly whatsapp: WhatsappService,
     private readonly email: EmailService,
+    private readonly conversation: ConversationService,
     private readonly logger: LoggerService,
   ) {
     this.ownerPhone = config.get<string>('OWNER_PHONE');
@@ -33,10 +58,40 @@ export class NotificationsService {
    */
   async notifyOwner(text: string, context?: NotificationContext): Promise<void> {
     const composed = this.compose(text, context);
+    await this.dispatch(composed.whatsapp, composed.subject, composed.body);
+  }
 
+  /**
+   * Owner notification enriched with CRM details for `phone`.
+   * Falls back to a plain notification if the CRM read fails or has no row.
+   */
+  async notifyOwnerAboutConversation(
+    phone: string,
+    reason: string,
+    opts: ConversationNotificationOptions = {},
+  ): Promise<void> {
+    let snapshot: CrmSnapshot | null = null;
+    try {
+      snapshot = await this.conversation.getCrmSnapshot(phone);
+    } catch (err) {
+      this.logger.warn('notifications', 'CRM snapshot fetch failed', {
+        phone,
+        error: (err as Error).message,
+      });
+    }
+
+    const composed = this.composeRich(phone, reason, snapshot, opts);
+    await this.dispatch(composed.whatsapp, composed.subject, composed.body);
+  }
+
+  private async dispatch(
+    whatsappText: string,
+    subject: string,
+    body: string,
+  ): Promise<void> {
     await Promise.allSettled([
-      this.sendWhatsapp(composed.whatsapp),
-      this.sendEmail(composed.subject, composed.body),
+      this.sendWhatsapp(whatsappText),
+      this.sendEmail(subject, body),
     ]);
   }
 
@@ -60,6 +115,74 @@ export class NotificationsService {
         error: (err as Error).message,
       });
     }
+  }
+
+  private composeRich(
+    phone: string,
+    reason: string,
+    snapshot: CrmSnapshot | null,
+    opts: ConversationNotificationOptions,
+  ): { whatsapp: string; subject: string; body: string } {
+    const label = this.reasonLabel(reason);
+    const guestLine = snapshot?.customerName
+      ? `Guest: ${snapshot.customerName} (${phone})`
+      : `Guest: ${phone}`;
+
+    const lines: string[] = [`🔔 Bonté Maison — ${label}`, guestLine];
+
+    if (snapshot) {
+      const statusBits: string[] = [`Status: ${snapshot.lifecycleStatus}`];
+      const lastIntent = opts.intent ?? snapshot.lastIntent;
+      if (lastIntent) statusBits.push(`Last intent: ${lastIntent}`);
+      if (snapshot.status !== 'bot') statusBits.push(`Mode: ${snapshot.status}`);
+      lines.push(statusBits.join(' · '));
+
+      if (snapshot.datesRequested) {
+        lines.push(`Dates: ${snapshot.datesRequested}`);
+      }
+      if (snapshot.priceQuoted || snapshot.availabilityResult) {
+        const quoteBits: string[] = [];
+        if (snapshot.priceQuoted) {
+          quoteBits.push(`Quote: €${Math.round(snapshot.priceQuoted).toLocaleString('en-GB')}`);
+        }
+        if (snapshot.availabilityResult) {
+          quoteBits.push(snapshot.availabilityResult);
+        }
+        lines.push(quoteBits.join(' · '));
+      }
+      if (snapshot.email) lines.push(`Email: ${snapshot.email}`);
+      if (snapshot.followUpCount && snapshot.followUpCount > 0) {
+        lines.push(`Follow-ups sent: ${snapshot.followUpCount}`);
+      }
+    } else if (opts.intent) {
+      lines.push(`Last intent: ${opts.intent}`);
+    }
+
+    if (opts.message) lines.push(`Message: "${opts.message}"`);
+
+    if (opts.extra) {
+      for (const [k, v] of Object.entries(opts.extra)) {
+        const value = this.stringify(v);
+        if (value) lines.push(`${k}: ${value}`);
+      }
+    }
+
+    const body = lines.join('\n');
+    const subject = snapshot?.customerName
+      ? `[Bonté Maison] ${label} — ${snapshot.customerName}`
+      : `[Bonté Maison] ${label} — ${phone}`;
+
+    return { whatsapp: body, subject, body };
+  }
+
+  private reasonLabel(reason: string): string {
+    return (
+      REASON_LABELS[reason] ??
+      reason
+        .split('_')
+        .map((w) => (w ? w[0].toUpperCase() + w.slice(1) : w))
+        .join(' ')
+    );
   }
 
   private compose(

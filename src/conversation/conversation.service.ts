@@ -27,6 +27,18 @@ export type ConversationState = {
   customerName: string | null;
 };
 
+export type CrmSnapshot = {
+  customerName: string | null;
+  email: string | null;
+  status: ConversationStatus;
+  lifecycleStatus: LifecycleStatus;
+  lastIntent: string | null;
+  datesRequested: string | null;
+  priceQuoted: number | null;
+  availabilityResult: AvailabilityResult | null;
+  followUpCount: number | null;
+};
+
 export type ParsedCommand =
   | { command: 'release'; phone?: string }
   | { command: 'pause'; phone?: string; minutes?: number }
@@ -100,6 +112,35 @@ export class ConversationService {
       lastIntent: f.last_intent ?? null,
       pendingDates: this.parsePending(f.pending_dates),
       customerName: f.customer_name ?? null,
+    };
+  }
+
+  async getCrmSnapshot(phone: string): Promise<CrmSnapshot | null> {
+    const row = await this.findRow(phone);
+    if (!row) return null;
+    const f = row.fields;
+    const effectiveStatus: ConversationStatus =
+      f.pause_status === 'paused' &&
+      f.pause_until &&
+      new Date(f.pause_until).getTime() < Date.now()
+        ? 'bot'
+        : (f.pause_status ?? 'bot');
+    return {
+      customerName: f.customer_name?.trim() ? f.customer_name.trim() : null,
+      email: f.email?.trim() ? f.email.trim() : null,
+      status: effectiveStatus,
+      lifecycleStatus: f.status ?? 'New',
+      lastIntent: f.last_intent ?? null,
+      datesRequested: f.dates_requested?.trim()
+        ? f.dates_requested.trim()
+        : null,
+      priceQuoted:
+        typeof f.price_quoted === 'number' && f.price_quoted > 0
+          ? f.price_quoted
+          : null,
+      availabilityResult: f.availability_result ?? null,
+      followUpCount:
+        typeof f.follow_up_count === 'number' ? f.follow_up_count : null,
     };
   }
 

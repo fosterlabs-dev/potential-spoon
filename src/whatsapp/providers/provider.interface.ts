@@ -2,6 +2,7 @@ export interface IncomingMessage {
   from: string;
   text: string;
   id?: string;
+  profileName?: string;
 }
 
 export interface WhatsAppProvider {

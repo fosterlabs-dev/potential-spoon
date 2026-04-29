@@ -50,12 +50,13 @@ const makeAvailability = (available = true): AvailabilityService =>
 
 const makePricing = (
   quote: unknown = {
+    weeks: 1,
     nights: 7,
-    nightlyBreakdown: [],
+    weeklyRate: 2100,
     subtotal: 2100,
     total: 2100,
-    minNights: 0,
-    meetsMinNights: true,
+    minWeeks: 0,
+    meetsMinWeeks: true,
   },
 ): PricingService =>
   ({
@@ -100,6 +101,7 @@ const makeConfig = (owner: string | undefined = OWNER): ConfigService =>
 const makeNotifications = (): NotificationsService =>
   ({
     notifyOwner: jest.fn().mockResolvedValue(undefined),
+    notifyOwnerAboutConversation: jest.fn().mockResolvedValue(undefined),
   }) as unknown as NotificationsService;
 
 const makeKnowledgeBase = (
@@ -549,9 +551,10 @@ describe('MessageHandlerService.handle — discount detection', () => {
     expect(conversation.setStatus).toHaveBeenCalledWith(CUSTOMER, 'paused', {
       pauseForMinutes: 60,
     });
-    expect(notifications.notifyOwner).toHaveBeenCalledWith(
-      expect.any(String),
-      expect.objectContaining({ reason: 'discount_request', from: CUSTOMER }),
+    expect(notifications.notifyOwnerAboutConversation).toHaveBeenCalledWith(
+      CUSTOMER,
+      'discount_request',
+      expect.any(Object),
     );
   });
 
@@ -617,9 +620,10 @@ describe('MessageHandlerService.handle — other intents', () => {
     expect(conversation.setStatus).toHaveBeenCalledWith(CUSTOMER, 'paused', {
       pauseForMinutes: 60,
     });
-    expect(notifications.notifyOwner).toHaveBeenCalledWith(
-      expect.stringContaining(CUSTOMER),
-      expect.objectContaining({ reason: 'booking_confirmation', from: CUSTOMER }),
+    expect(notifications.notifyOwnerAboutConversation).toHaveBeenCalledWith(
+      CUSTOMER,
+      'booking_confirmation',
+      expect.any(Object),
     );
   });
 
@@ -751,11 +755,10 @@ describe('MessageHandlerService.handle — fail-safe paths', () => {
     expect(conversation.setStatus).toHaveBeenCalledWith(CUSTOMER, 'paused', {
       pauseForMinutes: 60,
     });
-    expect(notifications.notifyOwner).toHaveBeenCalledWith(
-      expect.any(String),
+    expect(notifications.notifyOwnerAboutConversation).toHaveBeenCalledWith(
+      CUSTOMER,
+      'orchestrator_error',
       expect.objectContaining({
-        reason: 'orchestrator_error',
-        from: CUSTOMER,
         extra: expect.objectContaining({ error: 'ical down' }),
       }),
     );

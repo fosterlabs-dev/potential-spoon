@@ -107,7 +107,11 @@ export class WebhookController {
     });
 
     void this.handler
-      .handle({ from: message.from, text: message.text })
+      .handle({
+        from: message.from,
+        text: message.text,
+        profileName: message.profileName,
+      })
       .catch((err: Error) => {
         this.logger.error('whatsapp', 'handler threw; swallowed to keep 200', {
           from: message.from,

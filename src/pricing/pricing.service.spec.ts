@@ -13,161 +13,172 @@ const makeLogger = (): LoggerService =>
 const makeAirtable = (rows: Array<{ id: string; fields: unknown }>) =>
   ({ list: jest.fn().mockResolvedValue(rows) }) as unknown as AirtableService;
 
-const rule = (p: Partial<PricingRule> & Pick<PricingRule, 'startDate' | 'endDate' | 'nightlyRate'>): PricingRule => ({
-  minNights: undefined,
+const rule = (p: Partial<PricingRule> & Pick<PricingRule, 'startDate' | 'endDate' | 'weeklyRate'>): PricingRule => ({
+  minWeeks: undefined,
   label: undefined,
   ...p,
 });
 
 describe('PricingService.quote (pure)', () => {
-  const service = new PricingService(
-    makeAirtable([]),
-    makeLogger(),
-  );
+  const service = new PricingService(makeAirtable([]), makeLogger());
 
-  it('returns subtotal = rate * nights for a single rule covering the range', () => {
+  it('multiplies the band weekly rate by the number of weeks', () => {
     const rules = [
       rule({
-        startDate: new Date('2026-01-01'),
-        endDate: new Date('2026-12-31'),
-        nightlyRate: 100,
+        startDate: new Date('2027-01-04'),
+        endDate: new Date('2027-12-31'),
+        weeklyRate: 2495,
         label: 'Default',
       }),
     ];
 
     const q = service.quote(
       rules,
-      new Date('2026-06-01'),
-      new Date('2026-06-04'),
+      new Date('2027-06-06'),
+      new Date('2027-06-20'),
     );
 
-    expect(q.nights).toBe(3);
-    expect(q.nightlyBreakdown).toHaveLength(3);
-    expect(q.subtotal).toBe(300);
-    expect(q.total).toBe(300);
+    expect(q.weeks).toBe(2);
+    expect(q.nights).toBe(14);
+    expect(q.weeklyRate).toBe(2495);
+    expect(q.subtotal).toBe(4990);
+    expect(q.total).toBe(4990);
+    expect(q.label).toBe('Default');
   });
 
-  it('applies seasonal override to nights inside its range, default to the rest', () => {
+  it('picks the band that contains the check-in date', () => {
     const rules = [
       rule({
-        startDate: new Date('2026-01-01'),
-        endDate: new Date('2026-12-31'),
-        nightlyRate: 100,
-        label: 'Default',
+        startDate: new Date('2027-05-30'),
+        endDate: new Date('2027-07-11'),
+        weeklyRate: 3995,
+        label: 'Summer',
       }),
       rule({
-        startDate: new Date('2026-06-15'),
-        endDate: new Date('2026-06-20'),
-        nightlyRate: 250,
-        label: 'High',
+        startDate: new Date('2027-07-11'),
+        endDate: new Date('2027-08-29'),
+        weeklyRate: 4995,
+        label: 'High Summer',
       }),
     ];
 
     const q = service.quote(
       rules,
-      new Date('2026-06-14'),
-      new Date('2026-06-17'),
+      new Date('2027-07-04'),
+      new Date('2027-07-18'),
     );
 
-    // nights: 06-14 (default 100), 06-15 (high 250), 06-16 (high 250)
-    expect(q.nightlyBreakdown.map((n) => n.rate)).toEqual([100, 250, 250]);
-    expect(q.subtotal).toBe(600);
+    expect(q.label).toBe('Summer');
+    expect(q.weeklyRate).toBe(3995);
+    expect(q.total).toBe(3995 * 2);
   });
 
-  it('prefers the narrower rule when two rules cover the same night', () => {
+  it('prefers the narrower rule when two cover the check-in date', () => {
     const rules = [
       rule({
-        startDate: new Date('2026-01-01'),
-        endDate: new Date('2026-12-31'),
-        nightlyRate: 100,
+        startDate: new Date('2027-01-01'),
+        endDate: new Date('2027-12-31'),
+        weeklyRate: 2495,
       }),
       rule({
-        startDate: new Date('2026-06-01'),
-        endDate: new Date('2026-06-02'),
-        nightlyRate: 400,
+        startDate: new Date('2027-07-11'),
+        endDate: new Date('2027-08-29'),
+        weeklyRate: 4995,
       }),
     ];
 
     const q = service.quote(
       rules,
-      new Date('2026-06-01'),
-      new Date('2026-06-02'),
+      new Date('2027-07-18'),
+      new Date('2027-07-25'),
     );
 
-    expect(q.nightlyBreakdown[0].rate).toBe(400);
+    expect(q.weeklyRate).toBe(4995);
   });
 
-  it('throws when a night is not covered by any rule', () => {
+  it('throws when no rule covers the check-in date', () => {
     const rules = [
       rule({
-        startDate: new Date('2026-07-01'),
-        endDate: new Date('2026-07-31'),
-        nightlyRate: 100,
+        startDate: new Date('2027-07-01'),
+        endDate: new Date('2027-07-31'),
+        weeklyRate: 4995,
       }),
     ];
 
     expect(() =>
       service.quote(
         rules,
-        new Date('2026-06-28'),
-        new Date('2026-07-02'),
+        new Date('2027-06-06'),
+        new Date('2027-06-13'),
       ),
     ).toThrow(/no pricing rule/i);
   });
 
   it('throws on invalid range (checkOut <= checkIn)', () => {
     expect(() =>
-      service.quote([], new Date('2026-06-05'), new Date('2026-06-05')),
+      service.quote([], new Date('2027-06-06'), new Date('2027-06-06')),
     ).toThrow();
     expect(() =>
-      service.quote([], new Date('2026-06-05'), new Date('2026-06-01')),
+      service.quote([], new Date('2027-06-13'), new Date('2027-06-06')),
     ).toThrow();
   });
 
-  it('reports meetsMinNights=false when booking is shorter than max rule minNights', () => {
+  it('throws when stay length is not a multiple of 7 nights', () => {
     const rules = [
       rule({
-        startDate: new Date('2026-01-01'),
-        endDate: new Date('2026-12-31'),
-        nightlyRate: 100,
-        minNights: 2,
-      }),
-      rule({
-        startDate: new Date('2026-06-15'),
-        endDate: new Date('2026-06-20'),
-        nightlyRate: 250,
-        minNights: 5,
+        startDate: new Date('2027-01-01'),
+        endDate: new Date('2027-12-31'),
+        weeklyRate: 2495,
       }),
     ];
 
-    const q = service.quote(
-      rules,
-      new Date('2026-06-15'),
-      new Date('2026-06-18'),
-    );
-
-    expect(q.minNights).toBe(5);
-    expect(q.nights).toBe(3);
-    expect(q.meetsMinNights).toBe(false);
+    expect(() =>
+      service.quote(
+        rules,
+        new Date('2027-06-06'),
+        new Date('2027-06-10'),
+      ),
+    ).toThrow(/multiple of 7/i);
   });
 
-  it('reports meetsMinNights=true when booking length meets the max rule minNights', () => {
+  it('reports meetsMinWeeks=false when stay is shorter than the band minimum', () => {
     const rules = [
       rule({
-        startDate: new Date('2026-01-01'),
-        endDate: new Date('2026-12-31'),
-        nightlyRate: 100,
-        minNights: 2,
+        startDate: new Date('2027-01-01'),
+        endDate: new Date('2027-12-31'),
+        weeklyRate: 4995,
+        minWeeks: 2,
       }),
     ];
 
     const q = service.quote(
       rules,
-      new Date('2026-06-01'),
-      new Date('2026-06-03'),
+      new Date('2027-07-04'),
+      new Date('2027-07-11'),
     );
 
-    expect(q.meetsMinNights).toBe(true);
+    expect(q.minWeeks).toBe(2);
+    expect(q.weeks).toBe(1);
+    expect(q.meetsMinWeeks).toBe(false);
+  });
+
+  it('reports meetsMinWeeks=true when stay meets the band minimum', () => {
+    const rules = [
+      rule({
+        startDate: new Date('2027-01-01'),
+        endDate: new Date('2027-12-31'),
+        weeklyRate: 4995,
+        minWeeks: 2,
+      }),
+    ];
+
+    const q = service.quote(
+      rules,
+      new Date('2027-07-04'),
+      new Date('2027-07-18'),
+    );
+
+    expect(q.meetsMinWeeks).toBe(true);
   });
 });
 
@@ -177,25 +188,25 @@ describe('PricingService.calculate (Airtable integration)', () => {
       {
         id: 'rec1',
         fields: {
-          start_date: '2026-01-01',
-          end_date: '2026-12-31',
-          nightly_rate: 150,
-          min_nights: 2,
-          label: 'Default',
+          start_date: '2027-01-01',
+          end_date: '2027-12-31',
+          weekly_rate: 3995,
+          min_weeks: 1,
+          label: 'Summer',
         },
       },
     ]);
     const service = new PricingService(airtable, makeLogger());
 
     const q = await service.calculate(
-      new Date('2026-06-01'),
-      new Date('2026-06-04'),
+      new Date('2027-06-06'),
+      new Date('2027-06-20'),
     );
 
     expect(airtable.list).toHaveBeenCalledWith('Pricing');
-    expect(q.nights).toBe(3);
-    expect(q.subtotal).toBe(450);
-    expect(q.nightlyBreakdown[0].label).toBe('Default');
+    expect(q.weeks).toBe(2);
+    expect(q.subtotal).toBe(7990);
+    expect(q.label).toBe('Summer');
   });
 
   it('skips Airtable rows missing required fields and logs a warning', async () => {
@@ -203,9 +214,9 @@ describe('PricingService.calculate (Airtable integration)', () => {
       {
         id: 'good',
         fields: {
-          start_date: '2026-01-01',
-          end_date: '2026-12-31',
-          nightly_rate: 100,
+          start_date: '2027-01-01',
+          end_date: '2027-12-31',
+          weekly_rate: 2495,
         },
       },
       { id: 'bad', fields: { label: 'broken' } },
@@ -214,11 +225,11 @@ describe('PricingService.calculate (Airtable integration)', () => {
     const service = new PricingService(airtable, logger);
 
     const q = await service.calculate(
-      new Date('2026-06-01'),
-      new Date('2026-06-02'),
+      new Date('2027-06-06'),
+      new Date('2027-06-13'),
     );
 
-    expect(q.subtotal).toBe(100);
+    expect(q.subtotal).toBe(2495);
     expect(logger.warn).toHaveBeenCalledWith(
       'pricing',
       expect.stringContaining('skipping'),

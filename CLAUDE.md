@@ -193,11 +193,11 @@ Write failing test → minimal code → refactor → move on.
 ## Airtable schema
 
 ### `Pricing`
-- `season_name` (string)
+- `label` (string, e.g. `High Summer 2027`)
 - `start_date` (date)
 - `end_date` (date)
 - `weekly_rate` (currency)
-- `notes` (text)
+- `min_weeks` (number)
 
 ### `Templates`
 - `key` (string, e.g. `availability_yes_quote`)

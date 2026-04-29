@@ -24,7 +24,7 @@ const SEPTEMBER = 8; // UTC month index
 const KB_CONFIDENCE_THRESHOLD = 0.7;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-type IncomingMessage = { from: string; text: string };
+type IncomingMessage = { from: string; text: string; profileName?: string };
 
 type MergedIntent = {
   checkIn: Date | null;
@@ -90,7 +90,7 @@ export class MessageHandlerService {
       return;
     }
 
-    const storedName = state.customerName;
+    const storedName = state.customerName ?? msg.profileName ?? null;
 
     try {
       const history = await this.messageLog.recent(msg.from, HISTORY_LIMIT);
@@ -266,13 +266,10 @@ export class MessageHandlerService {
         month: this.monthName(merged.checkIn),
       });
       await this.recordQuoteSafe(from, datesLabel, 0, 'unavailable');
-      await this.notifications.notifyOwner(
-        `dates unavailable for ${from} (${datesLabel}) — Jim may want to suggest alternatives`,
-        {
-          reason: held ? 'hold_conflict' : 'dates_unavailable',
-          from,
-          extra: { dates: datesLabel, held },
-        },
+      await this.notifications.notifyOwnerAboutConversation(
+        from,
+        held ? 'hold_conflict' : 'dates_unavailable',
+        { intent: 'availability_inquiry', extra: { held } },
       );
       return;
     }
@@ -364,13 +361,11 @@ export class MessageHandlerService {
         check_out: this.formatDate(merged.checkOut),
         month: this.monthName(merged.checkIn),
       });
-      await this.notifications.notifyOwner(
-        `hold request blocked — dates unavailable for ${from} (${datesLabel})`,
-        {
-          reason: held ? 'hold_conflict' : 'dates_unavailable',
-          from,
-          extra: { dates: datesLabel, held, intent: 'hold_request' },
-        },
+      await this.recordQuoteSafe(from, datesLabel, 0, 'unavailable');
+      await this.notifications.notifyOwnerAboutConversation(
+        from,
+        held ? 'hold_conflict' : 'dates_unavailable',
+        { intent: 'hold_request', extra: { held } },
       );
       return;
     }
@@ -557,15 +552,18 @@ export class MessageHandlerService {
     }
 
     const reason = notification?.reason ?? this.handoffReason(templateKey);
-    await this.notifications.notifyOwner(
-      `needs attention: ${reason}${from ? ` (${from})` : ''}`,
-      {
-        reason,
-        from,
+    if (from) {
+      await this.notifications.notifyOwnerAboutConversation(from, reason, {
         message: originalText || undefined,
         extra: notification?.extra,
-      },
-    );
+      });
+    } else {
+      await this.notifications.notifyOwner(`needs attention: ${reason}`, {
+        reason,
+        message: originalText || undefined,
+        extra: notification?.extra,
+      });
+    }
   }
 
   private handoffReason(templateKey: string): string {

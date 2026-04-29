@@ -1,9 +1,5 @@
 import { AnyFields, FakeAirtable } from '../helpers/mocks';
 
-/**
- * Pricing bands sourced from CLAUDE.md / Jim's pricing doc.
- * Rates are weekly; converted to nightly = weekly / 7.
- */
 const PRICING_BANDS: Array<{
   label: string;
   start_date: string;
@@ -105,8 +101,8 @@ export function seedAll(airtable: FakeAirtable): void {
       label: b.label,
       start_date: b.start_date,
       end_date: b.end_date,
-      nightly_rate: Math.round(b.weekly / 7),
-      min_nights: 7,
+      weekly_rate: b.weekly,
+      min_weeks: 1,
     })),
   );
 
