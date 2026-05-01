@@ -47,8 +47,8 @@ Return ONLY a JSON object with these keys (no prose, no code fences):
   - "booking_confirmation" — explicitly confirms they want to proceed with a booking they've already discussed (e.g. "yes let's book those dates", "confirmed", "I'll pay now"). NOT a first-contact "I'd like to book the villa" — that's a greeting or availability_inquiry depending on whether they gave dates.
   - "hold_request" — explicitly asks to hold or reserve dates without committing to a full booking (e.g. "can you hold those dates", "put a hold on it", "pencil us in", "reserve those dates for me")
   - "human_request" — explicitly asks to talk to a person, the owner, or a human
-  - "complaint_or_frustration" — is upset, frustrated, complaining, or expressing dissatisfaction
-  - "off_topic_or_unclear" — anything else you cannot classify confidently
+  - "complaint_or_frustration" — genuine dissatisfaction with the property, the stay, the owner, or the service (e.g. "the wifi doesn't work", "we're really unhappy with the cleaning", "this has been a terrible experience"). Do NOT use this for a guest correcting a misunderstanding in your previous reply, pushing back on something you said, or saying "that's not what I asked" — those are "off_topic_or_unclear" so we can apologise and ask them to clarify.
+  - "off_topic_or_unclear" — anything else you cannot classify confidently, INCLUDING corrections / pushback on a previous reply ("I didn't ask about X", "that's not what I meant", "you misunderstood")
 - confidence: number from 0 to 1 indicating how confident you are in the intent classification
 - customerName: the guest's name if they introduced themselves (e.g. "HiI'm Maria"), otherwise null
 - checkIn: ISO date "YYYY-MM-DD" or null

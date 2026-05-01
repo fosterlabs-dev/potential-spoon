@@ -21,17 +21,17 @@ const TEMPLATES: TemplateRow[] = [
   {
     key: 'greeting_ask_dates',
     variant: 1,
-    text: `Thanks for getting in touch about Bonté Maison.\n\nTo check availability and send pricing, could you let me know the dates you're thinking of? Sunday to Sunday works best, the house runs on Sunday changeovers.\n\nMany thanks`,
+    text: `Hi! How can I help?\n\nMany thanks`,
   },
   {
     key: 'greeting_ask_dates',
     variant: 2,
-    text: `Lovely to hear from you.\n\nIf you can let me know roughly when you're thinking of visiting, I'll check availability and send options over.\n\nWe run on Sunday-to-Sunday stays, so dates in that format are easiest to quote.\n\nMany thanks`,
+    text: `Hello! What can I help you with?\n\nMany thanks`,
   },
   {
     key: 'greeting_ask_dates',
     variant: 3,
-    text: `Thank you for your message.\n\nHappy to help, could you share the dates you're considering? The house is let Sunday to Sunday, typically a week or more.\n\nOnce I have dates, I'll come back with availability and pricing.\n\nMany thanks`,
+    text: `Hi! How can I help?\n\nMany thanks`,
   },
 
   // dates_unclear_ask_clarify
@@ -376,17 +376,17 @@ const TEMPLATES: TemplateRow[] = [
   {
     key: 'unclear_handoff',
     variant: 1,
-    text: `Thanks for your message, let me check on that and come back to you shortly.\n\nMany thanks`,
+    text: `Sorry for the misunderstanding. Could you clarify your question again?\n\nMany thanks`,
   },
   {
     key: 'unclear_handoff',
     variant: 2,
-    text: `Thank you, I'll come back to you on this shortly so I can give you a proper answer.\n\nMany thanks`,
+    text: `Apologies if I misread that. Could you rephrase what you'd like to know?\n\nMany thanks`,
   },
   {
     key: 'unclear_handoff',
     variant: 3,
-    text: `Hold on a moment, Jim will jump in to help.\n\nMany thanks`,
+    text: `Sorry, I want to make sure I answer the right thing. Could you let me know what you're after?\n\nMany thanks`,
   },
 ];
 

@@ -7,7 +7,7 @@ import { TemplatesService, TemplateVars } from '../templates/templates.service';
 export type { TemplateVars };
 
 const SCENARIO_LABELS: Record<string, string> = {
-  greeting_ask_dates: 'Guest made first contact without providing dates — ask for their dates politely',
+  greeting_ask_dates: 'Guest sent a bare greeting (e.g. "hi"). Reply with a short, friendly identification of the property and ask how you can help. Keep it to 1–2 short sentences. Do NOT pre-emptively ask for dates or explain Sunday-to-Sunday — wait for them to say what they want.',
   dates_unclear_ask_clarify: 'Guest gave vague dates — ask for specific Sunday check-in and check-out',
   dates_not_sunday_to_sunday: 'Guest gave non-Sunday dates — explain Sunday changeovers and suggest the corrected dates',
   minimum_stay_not_met: 'Guest requested fewer than 7 nights — explain minimum stay and suggest a full week',
@@ -29,7 +29,7 @@ const SCENARIO_LABELS: Record<string, string> = {
   followup_7d: '7-day follow-up — gentle final check-in',
   human_request_handoff: 'Guest asked to speak to a person — Jim will be in touch shortly',
   complaint_handoff: 'Guest expressed frustration — Jim will reach out personally',
-  unclear_handoff: 'Message was unclear — acknowledge and say you will come back shortly',
+  unclear_handoff: 'Guest sent something unclear, or pushed back on a previous reply (e.g. "I didn\'t ask about that"). Apologise briefly for the misunderstanding and ask them to clarify what they\'d like to know. Do NOT escalate or say Jim will come back — handle it in-chat.',
 };
 
 const SYSTEM_PROMPT = `You are responding as Jim, the owner of Bonté Maison, a premium holiday house in the Dordogne.
@@ -171,7 +171,7 @@ export class ResponseService {
       const text = block?.type === 'text' ? block.text.trim() : '';
       if (!text) throw new Error('empty response');
       this.logger.info('response', 'generated', { key });
-      return text;
+      return /many thanks\.?\s*$/i.test(text) ? text : `${text}\n\nMany thanks`;
     } catch (err) {
       this.logger.warn('response', 'generate failed, falling back to template', {
         key,
