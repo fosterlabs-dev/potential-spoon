@@ -51,13 +51,13 @@ describe('Scenario 12 — Human / escalation triggers', () => {
     expectJimNotified(h);
   });
 
-  it('12.5 — garbled text → unclear_handoff, paused, Jim notified', async () => {
+  it('12.5 — garbled text → unclear_handoff, Jim notified, bot stays active', async () => {
     await sendIncoming(h, 'asdkfjas;ldkj', {
       parse: { intent: 'off_topic_or_unclear', confidence: 0.2 },
     });
     expectTemplateUsed(h, 'unclear_handoff');
     expectJimNotified(h);
-    await expectConversationStatus(h, 'paused');
+    await expectConversationStatus(h, 'bot');
   });
 
   it('12.6 — off-topic question → unclear_handoff', async () => {

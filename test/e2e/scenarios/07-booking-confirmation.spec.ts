@@ -17,13 +17,13 @@ describe('Scenario 7 — Booking confirmation', () => {
     await h.shutdown();
   });
 
-  it('7.1 — "Yes please book me in" → booking_confirmed_handoff, Jim notified, paused', async () => {
+  it('7.1 — "Yes please book me in" → booking_confirmed_handoff, Jim notified, bot stays active', async () => {
     await sendIncoming(h, 'Yes please book me in', {
       parse: { intent: 'booking_confirmation', confidence: 0.95 },
     });
     expectTemplateUsed(h, 'booking_confirmed_handoff');
     expectJimNotified(h);
-    await expectConversationStatus(h, 'paused');
+    await expectConversationStatus(h, 'bot');
   });
 
   it('7.3 — "We\'d like to secure those dates" → booking_confirmed_handoff', async () => {

@@ -523,9 +523,11 @@ describe('MessageHandlerService.handle — booking rules', () => {
       'long_stay_manual_pricing',
       expect.any(Object),
     );
-    expect(conversation.setStatus).toHaveBeenCalledWith(CUSTOMER, 'paused', {
-      pauseForMinutes: 60,
-    });
+    expect(conversation.setStatus).not.toHaveBeenCalledWith(
+      CUSTOMER,
+      'paused',
+      expect.any(Object),
+    );
   });
 });
 
@@ -548,9 +550,11 @@ describe('MessageHandlerService.handle — discount detection', () => {
       'discount_request',
       expect.any(Object),
     );
-    expect(conversation.setStatus).toHaveBeenCalledWith(CUSTOMER, 'paused', {
-      pauseForMinutes: 60,
-    });
+    expect(conversation.setStatus).not.toHaveBeenCalledWith(
+      CUSTOMER,
+      'paused',
+      expect.any(Object),
+    );
     expect(notifications.notifyOwnerAboutConversation).toHaveBeenCalledWith(
       CUSTOMER,
       'discount_request',
@@ -604,7 +608,7 @@ describe('MessageHandlerService.handle — other intents', () => {
     );
   });
 
-  it('booking_confirmation hands off and pauses', async () => {
+  it('booking_confirmation notifies Jim and keeps the bot active', async () => {
     const parser = makeParser({ intent: 'booking_confirmation' });
     const response = makeResponse();
     const conversation = makeConversation();
@@ -617,9 +621,11 @@ describe('MessageHandlerService.handle — other intents', () => {
       'booking_confirmed_handoff',
       expect.any(Object),
     );
-    expect(conversation.setStatus).toHaveBeenCalledWith(CUSTOMER, 'paused', {
-      pauseForMinutes: 60,
-    });
+    expect(conversation.setStatus).not.toHaveBeenCalledWith(
+      CUSTOMER,
+      'paused',
+      expect.any(Object),
+    );
     expect(notifications.notifyOwnerAboutConversation).toHaveBeenCalledWith(
       CUSTOMER,
       'booking_confirmation',
@@ -627,10 +633,11 @@ describe('MessageHandlerService.handle — other intents', () => {
     );
   });
 
-  it('human_request hands off via human_request_handoff', async () => {
+  it('human_request hands off via human_request_handoff and pauses the bot', async () => {
     const parser = makeParser({ intent: 'human_request' });
     const response = makeResponse();
-    const handler = build({ parser, response });
+    const conversation = makeConversation();
+    const handler = build({ parser, response, conversation });
 
     await handler.handle({ from: CUSTOMER, text: 'let me talk to someone' });
 
@@ -638,12 +645,16 @@ describe('MessageHandlerService.handle — other intents', () => {
       'human_request_handoff',
       expect.any(Object),
     );
+    expect(conversation.setStatus).toHaveBeenCalledWith(CUSTOMER, 'paused', {
+      pauseForMinutes: 60,
+    });
   });
 
-  it('complaint_or_frustration hands off via complaint_handoff', async () => {
+  it('complaint_or_frustration hands off via complaint_handoff and pauses the bot', async () => {
     const parser = makeParser({ intent: 'complaint_or_frustration' });
     const response = makeResponse();
-    const handler = build({ parser, response });
+    const conversation = makeConversation();
+    const handler = build({ parser, response, conversation });
 
     await handler.handle({ from: CUSTOMER, text: 'this is awful' });
 
@@ -651,6 +662,9 @@ describe('MessageHandlerService.handle — other intents', () => {
       'complaint_handoff',
       expect.any(Object),
     );
+    expect(conversation.setStatus).toHaveBeenCalledWith(CUSTOMER, 'paused', {
+      pauseForMinutes: 60,
+    });
   });
 
   it('general_info hands off via faq_unknown_handoff', async () => {
@@ -752,9 +766,11 @@ describe('MessageHandlerService.handle — fail-safe paths', () => {
       'unclear_handoff',
       expect.any(Object),
     );
-    expect(conversation.setStatus).toHaveBeenCalledWith(CUSTOMER, 'paused', {
-      pauseForMinutes: 60,
-    });
+    expect(conversation.setStatus).not.toHaveBeenCalledWith(
+      CUSTOMER,
+      'paused',
+      expect.any(Object),
+    );
     expect(notifications.notifyOwnerAboutConversation).toHaveBeenCalledWith(
       CUSTOMER,
       'orchestrator_error',

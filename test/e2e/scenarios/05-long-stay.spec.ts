@@ -28,7 +28,7 @@ describe('Scenario 5 — Long stay (Oct-May)', () => {
     });
     expectTemplateUsed(h, 'long_stay_manual_pricing');
     expectJimNotified(h);
-    await expectConversationStatus(h, 'paused');
+    await expectConversationStatus(h, 'bot');
   });
 
   it('5.2 — 4 months from Jan 2027 → long_stay_manual_pricing', async () => {

@@ -198,11 +198,25 @@ export class MessageHandlerService {
         return;
 
       case 'human_request':
-        await this.handoff(from, '', 'human_request_handoff', { name });
+        await this.handoff(
+          from,
+          '',
+          'human_request_handoff',
+          { name },
+          undefined,
+          { pause: true },
+        );
         return;
 
       case 'complaint_or_frustration':
-        await this.handoff(from, '', 'complaint_handoff', { name });
+        await this.handoff(
+          from,
+          '',
+          'complaint_handoff',
+          { name },
+          undefined,
+          { pause: true },
+        );
         return;
 
       case 'off_topic_or_unclear':
@@ -529,16 +543,19 @@ export class MessageHandlerService {
     templateKey: string,
     vars: TemplateVars = {},
     notification?: { reason?: string; extra?: Record<string, unknown> },
+    options: { pause?: boolean } = {},
   ): Promise<void> {
-    try {
-      await this.conversation.setStatus(from, 'paused', {
-        pauseForMinutes: PAUSE_ON_HANDOFF_MIN,
-      });
-    } catch (err) {
-      this.logger.error('conversation', 'failed to set pause status', {
-        from,
-        error: (err as Error).message,
-      });
+    if (options.pause) {
+      try {
+        await this.conversation.setStatus(from, 'paused', {
+          pauseForMinutes: PAUSE_ON_HANDOFF_MIN,
+        });
+      } catch (err) {
+        this.logger.error('conversation', 'failed to set pause status', {
+          from,
+          error: (err as Error).message,
+        });
+      }
     }
 
     try {
