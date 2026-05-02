@@ -58,10 +58,20 @@ export type Harness = {
   shutdown: () => Promise<void>;
 };
 
-export async function buildHarness(): Promise<Harness> {
+export type HarnessOptions = {
+  env?: Record<string, string>;
+};
+
+export async function buildHarness(
+  options: HarnessOptions = {},
+): Promise<Harness> {
   process.env.OWNER_PHONE = OWNER;
   process.env.OWNER_EMAIL = 'owner@example.com';
   process.env.YEAR_2026_FULLY_BOOKED = 'true';
+  process.env.INSTANT_BOOK_ENABLED = 'false';
+  for (const [key, value] of Object.entries(options.env ?? {})) {
+    process.env[key] = value;
+  }
   process.env.RESPONSE_MODE = 'template';
   process.env.AIRTABLE_API_KEY = 'test';
   process.env.AIRTABLE_BASE_ID = 'test';

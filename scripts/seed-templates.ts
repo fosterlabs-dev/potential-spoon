@@ -374,6 +374,21 @@ const TEMPLATES: TemplateRow[] = [
     text: `Sorry about that. Passing this to Jim straight away.\n\nMany thanks`,
   },
   {
+    key: 'acknowledgment_reply',
+    variant: 1,
+    text: `Thanks, let me know if anything else comes up.`,
+  },
+  {
+    key: 'acknowledgment_reply',
+    variant: 2,
+    text: `Thanks — happy to help if anything else comes to mind.`,
+  },
+  {
+    key: 'acknowledgment_reply',
+    variant: 3,
+    text: `Thanks. Just shout if you need anything else.`,
+  },
+  {
     key: 'unclear_handoff',
     variant: 1,
     text: `Sorry for the misunderstanding. Could you clarify your question again?\n\nMany thanks`,

@@ -34,8 +34,20 @@ describe('Scenario 7 — Booking confirmation', () => {
     expectJimNotified(h);
   });
 
-  // 7.2 (instant book) and 7.4 (capture email) are not yet implemented in
-  // the orchestrator — Phase 7 / CRM expansion.
-  it.todo('7.2 — INSTANT_BOOK_ENABLED=true uses booking_confirmed_instant_book');
+  it('7.2 — INSTANT_BOOK_ENABLED=true uses booking_confirmed_instant_book', async () => {
+    await h.shutdown();
+    h = await buildHarness({ env: { INSTANT_BOOK_ENABLED: 'true' } });
+
+    await sendIncoming(h, 'Yes please book me in', {
+      parse: { intent: 'booking_confirmation', confidence: 0.95 },
+    });
+    expectTemplateUsed(h, 'booking_confirmed_instant_book');
+    expectJimNotified(h);
+    await expectConversationStatus(h, 'bot');
+
+    process.env.INSTANT_BOOK_ENABLED = 'false';
+  });
+
+  // 7.4 (capture email) is not yet implemented in the orchestrator — CRM expansion phase.
   it.todo('7.4 — captures email in CRM after booking_confirmed_handoff');
 });

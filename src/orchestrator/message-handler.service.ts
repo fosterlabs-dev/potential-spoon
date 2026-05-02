@@ -36,6 +36,7 @@ type MergedIntent = {
 @Injectable()
 export class MessageHandlerService {
   private readonly ownerPhone: string | undefined;
+  private readonly instantBookEnabled: boolean;
 
   constructor(
     private readonly parser: ParserService,
@@ -54,6 +55,8 @@ export class MessageHandlerService {
     config: ConfigService,
   ) {
     this.ownerPhone = config.get<string>('OWNER_PHONE');
+    this.instantBookEnabled =
+      config.get<string>('INSTANT_BOOK_ENABLED') === 'true';
   }
 
   async handle(msg: IncomingMessage): Promise<void> {
@@ -91,6 +94,7 @@ export class MessageHandlerService {
     }
 
     const storedName = state.customerName ?? msg.profileName ?? null;
+    const previousIntent = state.lastIntent;
 
     try {
       const history = await this.messageLog.recent(msg.from, HISTORY_LIMIT);
@@ -126,6 +130,7 @@ export class MessageHandlerService {
         merged,
         { kbTopic: parsed.kbTopic, confidence: parsed.confidence },
         parsed.highIntentSignal,
+        previousIntent,
       );
     } catch (err) {
       const error = (err as Error).message;
@@ -149,6 +154,7 @@ export class MessageHandlerService {
     merged: MergedIntent,
     kb: { kbTopic: string | null; confidence: number },
     highIntentSignal: boolean,
+    previousIntent: string | null,
   ): Promise<void> {
     const name = merged.customerName ?? '';
 
@@ -181,8 +187,11 @@ export class MessageHandlerService {
         await this.handleGeneralInfo(from, name, kb);
         return;
 
-      case 'booking_confirmation':
-        await this.handoff(from, '', 'booking_confirmed_handoff', { name });
+      case 'booking_confirmation': {
+        const templateKey = this.instantBookEnabled
+          ? 'booking_confirmed_instant_book'
+          : 'booking_confirmed_handoff';
+        await this.handoff(from, '', templateKey, { name });
         try {
           await this.conversation.setLifecycleStatus(from, 'Booked');
         } catch (err) {
@@ -192,6 +201,7 @@ export class MessageHandlerService {
           });
         }
         return;
+      }
 
       case 'hold_request':
         await this.handleHoldRequest(from, merged);
@@ -206,6 +216,16 @@ export class MessageHandlerService {
           undefined,
           { pause: true },
         );
+        return;
+
+      case 'acknowledgment':
+        if (previousIntent === 'acknowledgment') {
+          this.logger.info('conversation', 'silent drop: repeat acknowledgment', {
+            from,
+          });
+          return;
+        }
+        await this.reply(from, 'acknowledgment_reply', { name });
         return;
 
       case 'complaint_or_frustration':
@@ -596,6 +616,7 @@ export class MessageHandlerService {
       case 'human_request_handoff':
         return 'human_request';
       case 'booking_confirmed_handoff':
+      case 'booking_confirmed_instant_book':
         return 'booking_confirmation';
       case 'unclear_handoff':
       default:

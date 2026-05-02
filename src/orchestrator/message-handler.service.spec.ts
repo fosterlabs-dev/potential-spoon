@@ -95,8 +95,19 @@ const makeMessageLog = (): MessageLogService =>
     recent: jest.fn().mockResolvedValue([]),
   }) as unknown as MessageLogService;
 
-const makeConfig = (owner: string | undefined = OWNER): ConfigService =>
-  ({ get: () => owner }) as unknown as ConfigService;
+const makeConfig = (
+  overrides: { owner?: string; instantBook?: boolean } = {},
+): ConfigService => {
+  const owner = 'owner' in overrides ? overrides.owner : OWNER;
+  const instantBook = overrides.instantBook ? 'true' : 'false';
+  const values: Record<string, string | undefined> = {
+    OWNER_PHONE: owner,
+    INSTANT_BOOK_ENABLED: instantBook,
+  };
+  return {
+    get: (key: string) => values[key],
+  } as unknown as ConfigService;
+};
 
 const makeNotifications = (): NotificationsService =>
   ({
@@ -608,6 +619,37 @@ describe('MessageHandlerService.handle — other intents', () => {
     );
   });
 
+  it('booking_confirmation with INSTANT_BOOK_ENABLED=true sends instant-book template', async () => {
+    const parser = makeParser({ intent: 'booking_confirmation' });
+    const response = makeResponse();
+    const conversation = makeConversation();
+    const notifications = makeNotifications();
+    const config = makeConfig({ instantBook: true });
+    const handler = build({
+      parser,
+      response,
+      conversation,
+      notifications,
+      config,
+    });
+
+    await handler.handle({ from: CUSTOMER, text: "let's book" });
+
+    expect(response.render).toHaveBeenCalledWith(
+      'booking_confirmed_instant_book',
+      expect.any(Object),
+    );
+    expect(response.render).not.toHaveBeenCalledWith(
+      'booking_confirmed_handoff',
+      expect.any(Object),
+    );
+    expect(notifications.notifyOwnerAboutConversation).toHaveBeenCalledWith(
+      CUSTOMER,
+      'booking_confirmation',
+      expect.any(Object),
+    );
+  });
+
   it('booking_confirmation notifies Jim and keeps the bot active', async () => {
     const parser = makeParser({ intent: 'booking_confirmation' });
     const response = makeResponse();
@@ -681,6 +723,49 @@ describe('MessageHandlerService.handle — other intents', () => {
       'faq_unknown_handoff',
       expect.any(Object),
     );
+  });
+
+  it('acknowledgment replies with acknowledgment_reply when previous intent was different', async () => {
+    const parser = makeParser({ intent: 'acknowledgment' });
+    const response = makeResponse();
+    const whatsapp = makeWhatsapp();
+    const conversation = makeConversation({
+      getState: jest.fn().mockResolvedValue({
+        status: 'bot',
+        lastIntent: 'availability_inquiry',
+        pendingDates: null,
+        customerName: null,
+      }),
+    });
+    const handler = build({ parser, response, whatsapp, conversation });
+
+    await handler.handle({ from: CUSTOMER, text: 'thanks' });
+
+    expect(response.render).toHaveBeenCalledWith(
+      'acknowledgment_reply',
+      expect.any(Object),
+    );
+    expect(whatsapp.sendMessage).toHaveBeenCalled();
+  });
+
+  it('acknowledgment is silently dropped when previous intent was also acknowledgment', async () => {
+    const parser = makeParser({ intent: 'acknowledgment' });
+    const response = makeResponse();
+    const whatsapp = makeWhatsapp();
+    const conversation = makeConversation({
+      getState: jest.fn().mockResolvedValue({
+        status: 'bot',
+        lastIntent: 'acknowledgment',
+        pendingDates: null,
+        customerName: null,
+      }),
+    });
+    const handler = build({ parser, response, whatsapp, conversation });
+
+    await handler.handle({ from: CUSTOMER, text: 'thanks again' });
+
+    expect(response.render).not.toHaveBeenCalled();
+    expect(whatsapp.sendMessage).not.toHaveBeenCalled();
   });
 
   it('off_topic_or_unclear hands off via unclear_handoff', async () => {

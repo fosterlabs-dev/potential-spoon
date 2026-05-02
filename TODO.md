@@ -214,8 +214,8 @@ Build in this order — each phase should be fully working and tested before mov
 
 **Instant book toggle**
 
-- [ ] **`INSTANT_BOOK_ENABLED` env flag** — read in orchestrator
-- [ ] **Swap template**: `booking_confirmed_handoff` → `booking_confirmed_instant_book` when flag is true
+- [x] **`INSTANT_BOOK_ENABLED` env flag** — read in orchestrator
+- [x] **Swap template**: `booking_confirmed_handoff` → `booking_confirmed_instant_book` when flag is true
 
 **Phase 6 tests**
 

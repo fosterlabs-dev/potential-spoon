@@ -29,6 +29,7 @@ const SCENARIO_LABELS: Record<string, string> = {
   followup_7d: '7-day follow-up — gentle final check-in',
   human_request_handoff: 'Guest asked to speak to a person — Jim will be in touch shortly',
   complaint_handoff: 'Guest expressed frustration — Jim will reach out personally',
+  acknowledgment_reply: 'Guest sent a short acknowledgment or closer ("thanks", "ok I\'ll get back to you", "let me check with my partner"). Reply with one short, warm closer in kind — something like "Thanks, let me know if anything else comes up." One sentence. Do NOT use phrases like "no rush" or "take your time" — they read as pushy. No questions, no sign-off, no website link.',
   unclear_handoff: 'Guest sent something unclear, or pushed back on a previous reply (e.g. "I didn\'t ask about that"). Apologise briefly for the misunderstanding and ask them to clarify what they\'d like to know. Do NOT escalate or say Jim will come back — handle it in-chat.',
 };
 
