@@ -116,4 +116,15 @@ export function seedAll(airtable: FakeAirtable): void {
   );
 
   airtable.seed('KnowledgeBase', KB_TOPICS.map<AnyFields>((t) => ({ ...t, active: true })));
+
+  airtable.seed(
+    'Fragments',
+    KB_TOPICS.map<AnyFields>((t) => ({
+      key: t.topic_key,
+      category: 'knowledge',
+      text: t.answer,
+      topic_keys: [t.topic_key],
+      active: true,
+    })),
+  );
 }

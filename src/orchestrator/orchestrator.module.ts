@@ -1,14 +1,24 @@
 import { Global, Module } from '@nestjs/common';
 import { BookingRulesModule } from '../booking-rules/booking-rules.module';
+import { ComposerModule } from '../composer/composer.module';
 import { FollowUpsModule } from '../follow-ups/follow-ups.module';
+import { FragmentsModule } from '../fragments/fragments.module';
+import { HelpersModule } from '../helpers/helpers.module';
 import { HoldsModule } from '../holds/holds.module';
-import { KnowledgeBaseModule } from '../knowledge-base/knowledge-base.module';
-import { ResponseModule } from '../response/response.module';
+import { TemplatesModule } from '../templates/templates.module';
 import { MessageHandlerService } from './message-handler.service';
 
 @Global()
 @Module({
-  imports: [BookingRulesModule, HoldsModule, FollowUpsModule, KnowledgeBaseModule, ResponseModule],
+  imports: [
+    BookingRulesModule,
+    HoldsModule,
+    FollowUpsModule,
+    TemplatesModule,
+    ComposerModule,
+    FragmentsModule,
+    HelpersModule,
+  ],
   providers: [MessageHandlerService],
   exports: [MessageHandlerService],
 })

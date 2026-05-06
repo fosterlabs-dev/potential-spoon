@@ -26,11 +26,12 @@ describe('Scenario 16 — Edge cases & failure modes', () => {
     expectJimNotified(h);
   });
 
-  it('16.2 — low-confidence off_topic → unclear_handoff', async () => {
+  it('16.2 — low-confidence off_topic → unclear scenario via composer', async () => {
     await sendIncoming(h, '???', {
       parse: { intent: 'off_topic_or_unclear', confidence: 0.1 },
     });
-    expectTemplateUsed(h, 'unclear_handoff');
+    const composeCalls = h.composeCalls();
+    expect(composeCalls.some((c) => c.scenarioHint === 'unclear')).toBe(true);
   });
 
   it('16.3 — iCal feed throws → unclear_handoff (graceful failure)', async () => {

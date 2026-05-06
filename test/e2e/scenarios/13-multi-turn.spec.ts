@@ -39,19 +39,17 @@ describe('Scenario 13 — Multi-turn context', () => {
 
   it('13.2 — capacity FAQ then guest count → KB sleeps + then dates ask', async () => {
     await sendIncoming(h, 'Sleep how many?', {
-      parse: { intent: 'general_info', confidence: 0.9, kbTopic: 'sleeps' },
+      parse: { intent: 'general_info', confidence: 0.9, topicKeys: ['sleeps'] },
     });
     expect(h.provider.sent[0].text).toMatch(/sleeps 10/);
     await sendIncoming(h, "We're 8 adults", {
       parse: {
         intent: 'general_info',
         confidence: 0.85,
-        kbTopic: 'sleeps',
+        topicKeys: ['sleeps'],
         guests: 8,
       },
     });
-    // KB-driven answers do not run through render — outbound text comes
-    // straight from KnowledgeBaseService. So renderCalls won't list 'sleeps'.
     expect(h.provider.sent.length).toBeGreaterThanOrEqual(2);
   });
 
@@ -73,10 +71,10 @@ describe('Scenario 13 — Multi-turn context', () => {
 
   it('13.4 — booking_confirmation eventually hands off', async () => {
     await sendIncoming(h, 'Is the pool heated?', {
-      parse: { intent: 'general_info', confidence: 0.9, kbTopic: 'pool_heated' },
+      parse: { intent: 'general_info', confidence: 0.9, topicKeys: ['pool_heated'] },
     });
     await sendIncoming(h, 'How many bedrooms?', {
-      parse: { intent: 'general_info', confidence: 0.9, kbTopic: 'sleeps' },
+      parse: { intent: 'general_info', confidence: 0.9, topicKeys: ['sleeps'] },
     });
     await sendIncoming(h, "Yes I'd like to book", {
       parse: { intent: 'booking_confirmation', confidence: 0.95 },

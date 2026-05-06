@@ -3,7 +3,7 @@ import * as cron from 'node-cron';
 import { ConversationService } from '../conversation/conversation.service';
 import { LoggerService } from '../logger/logger.service';
 import { MessageLogService } from '../messagelog/messagelog.service';
-import { ResponseService } from '../response/response.service';
+import { TemplatesService } from '../templates/templates.service';
 import { WhatsappService } from '../whatsapp/whatsapp.service';
 import { FollowUp, FollowUpsService } from './follow-ups.service';
 
@@ -18,7 +18,7 @@ export class FollowUpsCronService implements OnModuleInit, OnModuleDestroy {
     private readonly followUps: FollowUpsService,
     private readonly whatsapp: WhatsappService,
     private readonly messageLog: MessageLogService,
-    private readonly response: ResponseService,
+    private readonly templates: TemplatesService,
     private readonly conversation: ConversationService,
     private readonly logger: LoggerService,
   ) {}
@@ -93,7 +93,7 @@ export class FollowUpsCronService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async send(phone: string, key: string): Promise<void> {
-    const text = await this.response.render(key, { phone });
+    const text = await this.templates.render(key, { phone });
     await this.whatsapp.sendMessage(phone, text);
     await this.messageLog.log(phone, 'out', text);
     this.logger.info('follow-ups', 'sent', { phone, key });

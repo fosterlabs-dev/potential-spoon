@@ -3,7 +3,7 @@ import * as cron from 'node-cron';
 import { HoldsService, Hold } from './holds.service';
 import { WhatsappService } from '../whatsapp/whatsapp.service';
 import { MessageLogService } from '../messagelog/messagelog.service';
-import { ResponseService } from '../response/response.service';
+import { TemplatesService } from '../templates/templates.service';
 import { LoggerService } from '../logger/logger.service';
 
 @Injectable()
@@ -14,7 +14,7 @@ export class HoldsCronService implements OnModuleInit, OnModuleDestroy {
     private readonly holds: HoldsService,
     private readonly whatsapp: WhatsappService,
     private readonly messageLog: MessageLogService,
-    private readonly response: ResponseService,
+    private readonly templates: TemplatesService,
     private readonly logger: LoggerService,
   ) {}
 
@@ -54,7 +54,7 @@ export class HoldsCronService implements OnModuleInit, OnModuleDestroy {
     const { phone, check_in, check_out } = hold.fields;
 
     if (expiresAt <= now) {
-      const text = await this.response.render('hold_expired', {
+      const text = await this.templates.render('hold_expired', {
         phone,
         check_in,
         check_out,
@@ -70,7 +70,7 @@ export class HoldsCronService implements OnModuleInit, OnModuleDestroy {
     const daysUntilExpiry = msUntilExpiry / (24 * 60 * 60 * 1000);
 
     if (daysUntilExpiry <= 1 && !hold.fields.reminder_sent) {
-      const text = await this.response.render('hold_reminder', {
+      const text = await this.templates.render('hold_reminder', {
         phone,
         check_in,
         check_out,

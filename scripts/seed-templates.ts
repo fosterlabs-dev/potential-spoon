@@ -86,34 +86,34 @@ const TEMPLATES: TemplateRow[] = [
   {
     key: 'availability_yes_quote',
     variant: 1,
-    text: `Great news, the villa is available from {check_in} to {check_out}.\n\nFor {nights} nights, it's {price}.\n\nIt's a lovely time to be here, warm evenings, local markets, food and wine to enjoy.\n\nIf it helps, I can pencil those dates in for you while you have a think. Just let me know.\n\nMany thanks`,
+    text: `Great news, {check_in} to {check_out} is available, {nights} nights at {price}.\nIt's a lovely time to be here, warm evenings, local markets, food and wine to enjoy.\nIf it helps, I can pencil those dates in while you have a think.\n\nMany thanks`,
   },
   {
     key: 'availability_yes_quote',
     variant: 2,
-    text: `Thanks for your dates.\n\nGood news, {check_in} to {check_out} is available. The rate for that week is {price}.\n\nThere's loads happening locally that time of year and the house really comes into its own in the evenings.\n\nHappy to hold those dates for you for a few days while you decide, just say the word.\n\nMany thanks`,
+    text: `Good news, {check_in} to {check_out} is available, {nights} nights at {price}.\nThe house really comes into its own in the evenings that time of year.\nHappy to hold those dates for a few days while you decide, just say the word.\n\nMany thanks`,
   },
   {
     key: 'availability_yes_quote',
     variant: 3,
-    text: `Thank you for getting in touch.\n\n{check_in} to {check_out} is available. {nights} nights comes to {price}.\n\nIf you'd like, I can pencil those dates in for you while you have a think, it's always worth doing as we do get a lot of enquiries.\n\nMany thanks`,
+    text: `{check_in} to {check_out} is available, {nights} nights at {price}.\nIf you'd like, I can pencil those dates in for you while you have a think, it's always worth doing as we do get a lot of enquiries.\n\nMany thanks`,
   },
   {
     key: 'availability_yes_quote',
     variant: 4,
-    text: `Lovely to hear from you.\n\nThe villa is free from {check_in} to {check_out}. The total for the week is {price}.\n\nThere's a real atmosphere here that time of year, vineyards, markets, long evenings outside. Most guests end up outside with a drink on that first evening.\n\nWould you like me to hold those dates for you for a few days?\n\nMany thanks`,
+    text: `The villa is free from {check_in} to {check_out}, {nights} nights at {price}.\nA real atmosphere here that time of year, vineyards, markets, long evenings outside.\nWould you like me to hold those dates for a few days?\n\nMany thanks`,
   },
 
-  // september_wine_harvest_note (append to quote when check-in is in September)
+  // september_wine_harvest_note (inserted before the sign-off when stay touches September)
   {
     key: 'september_wine_harvest_note',
     variant: 1,
-    text: `By the way, that's right in the middle of the wine harvest, so there's a lovely atmosphere in the area. Vineyards busy, local food and wine events, usually still hot and sunny.`,
+    text: `That's right in the middle of the wine harvest too, vineyards busy, local food and wine events, usually still hot and sunny.`,
   },
   {
     key: 'september_wine_harvest_note',
     variant: 2,
-    text: `One thing to mention, September is one of the best times to visit here. It's wine harvest season, so the whole area comes alive with tastings, markets and vineyard events.`,
+    text: `Worth mentioning, September is wine harvest season here, so the whole area comes alive with tastings, markets and vineyard events.`,
   },
 
   // availability_no_handoff
@@ -213,6 +213,18 @@ const TEMPLATES: TemplateRow[] = [
     key: 'booking_confirmed_handoff',
     variant: 3,
     text: `Perfect. Could you share your email address and Jim will send over the booking details to confirm.\n\nMany thanks`,
+  },
+
+  // booking_email_received_handoff (sent when the customer provides their email)
+  {
+    key: 'booking_email_received_handoff',
+    variant: 1,
+    text: `Got it, thanks. I'll send the booking details over to {email} shortly.\n\nMany thanks`,
+  },
+  {
+    key: 'booking_email_received_handoff',
+    variant: 2,
+    text: `Thanks, your email is noted. The booking details will be on their way shortly.\n\nMany thanks`,
   },
 
   // booking_confirmed_instant_book (used once INSTANT_BOOK_ENABLED=true)

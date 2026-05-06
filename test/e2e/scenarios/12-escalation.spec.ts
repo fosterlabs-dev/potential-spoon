@@ -1,5 +1,6 @@
 import { sendIncoming } from '../helpers/send-message';
 import {
+  expectComposed,
   expectConversationStatus,
   expectJimNotified,
   expectTemplateUsed,
@@ -51,19 +52,18 @@ describe('Scenario 12 — Human / escalation triggers', () => {
     expectJimNotified(h);
   });
 
-  it('12.5 — garbled text → unclear_handoff, Jim notified, bot stays active', async () => {
+  it('12.5 — garbled text → unclear scenario via composer, bot stays active', async () => {
     await sendIncoming(h, 'asdkfjas;ldkj', {
       parse: { intent: 'off_topic_or_unclear', confidence: 0.2 },
     });
-    expectTemplateUsed(h, 'unclear_handoff');
-    expectJimNotified(h);
+    expectComposed(h, 'unclear');
     await expectConversationStatus(h, 'bot');
   });
 
-  it('12.6 — off-topic question → unclear_handoff', async () => {
+  it('12.6 — off-topic question → unclear scenario via composer', async () => {
     await sendIncoming(h, 'Tell me about Bordeaux wineries', {
       parse: { intent: 'off_topic_or_unclear', confidence: 0.4 },
     });
-    expectTemplateUsed(h, 'unclear_handoff');
+    expectComposed(h, 'unclear');
   });
 });

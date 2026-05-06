@@ -77,6 +77,14 @@ export class BookingRulesService {
     return { pass: true };
   }
 
+  /**
+   * True when the bot should refuse a month-level query because the year is
+   * fully booked. Used by the month-query path which has no concrete dates.
+   */
+  isYearFullyBooked(year: number): boolean {
+    return this.year2026Booked && year === 2026;
+  }
+
   private nextSunday(date: Date): Date {
     const daysUntilSunday = (7 - date.getUTCDay()) % 7;
     return new Date(date.getTime() + daysUntilSunday * DAY_MS);

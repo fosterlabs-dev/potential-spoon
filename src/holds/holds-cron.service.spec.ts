@@ -2,7 +2,7 @@ import { HoldsCronService } from './holds-cron.service';
 import { HoldsService, Hold } from './holds.service';
 import { WhatsappService } from '../whatsapp/whatsapp.service';
 import { MessageLogService } from '../messagelog/messagelog.service';
-import { ResponseService } from '../response/response.service';
+import { TemplatesService } from '../templates/templates.service';
 import { LoggerService } from '../logger/logger.service';
 
 const makeLogger = () =>
@@ -13,7 +13,7 @@ const makeLogger = () =>
   }) as unknown as LoggerService;
 
 const makeResponse = (text = 'rendered') =>
-  ({ render: jest.fn().mockResolvedValue(text) }) as unknown as ResponseService;
+  ({ render: jest.fn().mockResolvedValue(text) }) as unknown as TemplatesService;
 
 const makeWhatsapp = () =>
   ({ sendMessage: jest.fn().mockResolvedValue(undefined) }) as unknown as WhatsappService;
@@ -121,7 +121,7 @@ describe('HoldsCronService', () => {
       const holds = makeHolds([hold]);
       const response = {
         render: jest.fn().mockRejectedValue(new Error('template missing')),
-      } as unknown as ResponseService;
+      } as unknown as TemplatesService;
       const logger = makeLogger();
       const svc = new HoldsCronService(holds, makeWhatsapp(), makeMessageLog(), response, logger);
 

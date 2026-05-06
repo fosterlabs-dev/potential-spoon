@@ -78,12 +78,19 @@ describe('ParserService', () => {
       intent: 'availability_inquiry',
       confidence: 0.95,
       customerName: 'Maria',
+      guestEmail: null,
       checkIn: new Date('2026-06-15'),
       checkOut: new Date('2026-06-20'),
       guests: 2,
       mentionsDiscount: false,
       highIntentSignal: false,
-      kbTopic: null,
+      topicKeys: [],
+      monthQuery: null,
+      monthRangeQuery: null,
+      needsGreeting: false,
+      needsAcknowledgment: false,
+      isCorrection: false,
+      isClarificationOfPrevious: false,
     });
   });
 
@@ -141,12 +148,19 @@ describe('ParserService', () => {
       intent: 'availability_inquiry',
       confidence: 0.8,
       customerName: null,
+      guestEmail: null,
       checkIn: null,
       checkOut: null,
       guests: null,
       mentionsDiscount: false,
       highIntentSignal: false,
-      kbTopic: null,
+      topicKeys: [],
+      monthQuery: null,
+      monthRangeQuery: null,
+      needsGreeting: false,
+      needsAcknowledgment: false,
+      isCorrection: false,
+      isClarificationOfPrevious: false,
     });
   });
 

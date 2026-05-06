@@ -29,17 +29,17 @@ describe('Scenario 8 — FAQ / Knowledge base', () => {
   for (const [num, msg, kbTopic, fragment] of cases) {
     it(`${num} — "${msg}" answers from KB topic ${kbTopic}`, async () => {
       await sendIncoming(h, msg, {
-        parse: { intent: 'general_info', confidence: 0.9, kbTopic },
+        parse: { intent: 'general_info', confidence: 0.9, topicKeys: [kbTopic] },
       });
       expectMessageSentTo(h, CUSTOMER, fragment);
     });
   }
 
-  it('low-confidence general_info hands off to faq_unknown', async () => {
+  it('unknown topic general_info routes to faq_unknown scenario via composer', async () => {
     await sendIncoming(h, 'Got a hairdryer?', {
-      parse: { intent: 'general_info', confidence: 0.3, kbTopic: null },
+      parse: { intent: 'general_info', confidence: 0.3, topicKeys: [] },
     });
-    const calls = h.renderCalls();
-    expect(calls).toContain('faq_unknown_handoff');
+    const composeCalls = h.composeCalls();
+    expect(composeCalls.some((c) => c.scenarioHint === 'faq_unknown')).toBe(true);
   });
 });

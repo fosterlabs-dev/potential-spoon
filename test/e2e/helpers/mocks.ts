@@ -136,12 +136,19 @@ const DEFAULT_PARSE: ParseResult = {
   intent: 'off_topic_or_unclear',
   confidence: 0,
   customerName: null,
+  guestEmail: null,
   checkIn: null,
   checkOut: null,
   guests: null,
   mentionsDiscount: false,
   highIntentSignal: false,
-  kbTopic: null,
+  topicKeys: [],
+  monthQuery: null,
+  monthRangeQuery: null,
+  needsGreeting: false,
+  needsAcknowledgment: false,
+  isCorrection: false,
+  isClarificationOfPrevious: false,
 };
 
 export class FakeParser {

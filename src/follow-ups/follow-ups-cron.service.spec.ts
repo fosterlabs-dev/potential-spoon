@@ -1,7 +1,7 @@
 import { ConversationService } from '../conversation/conversation.service';
 import { LoggerService } from '../logger/logger.service';
 import { MessageLogService } from '../messagelog/messagelog.service';
-import { ResponseService } from '../response/response.service';
+import { TemplatesService } from '../templates/templates.service';
 import { WhatsappService } from '../whatsapp/whatsapp.service';
 import { FollowUpsCronService } from './follow-ups-cron.service';
 import { FollowUp, FollowUpsService } from './follow-ups.service';
@@ -16,7 +16,7 @@ const makeLogger = () =>
   ({ info: jest.fn(), warn: jest.fn(), error: jest.fn() }) as unknown as LoggerService;
 
 const makeResponse = (text = 'rendered') =>
-  ({ render: jest.fn().mockResolvedValue(text) }) as unknown as ResponseService;
+  ({ render: jest.fn().mockResolvedValue(text) }) as unknown as TemplatesService;
 
 const makeWhatsapp = () =>
   ({ sendMessage: jest.fn().mockResolvedValue(undefined) }) as unknown as WhatsappService;

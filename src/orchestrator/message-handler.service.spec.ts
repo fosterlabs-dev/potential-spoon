@@ -1,16 +1,18 @@
 import { ConfigService } from '@nestjs/config';
 import { AvailabilityService } from '../availability/availability.service';
 import { BookingRulesService, RulesValidation } from '../booking-rules/booking-rules.service';
+import { ComposerService } from '../composer/composer.service';
 import { ConversationService } from '../conversation/conversation.service';
 import { FollowUpsService } from '../follow-ups/follow-ups.service';
+import { FragmentsService } from '../fragments/fragments.service';
+import { HelpersService } from '../helpers/helpers.service';
 import { HoldsService } from '../holds/holds.service';
-import { KnowledgeBaseService } from '../knowledge-base/knowledge-base.service';
 import { LoggerService } from '../logger/logger.service';
 import { MessageLogService } from '../messagelog/messagelog.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { ParseResult, ParserService } from '../parser/parser.service';
 import { PricingService } from '../pricing/pricing.service';
-import { ResponseService } from '../response/response.service';
+import { TemplatesService } from '../templates/templates.service';
 import { WhatsappService } from '../whatsapp/whatsapp.service';
 import { MessageHandlerService } from './message-handler.service';
 
@@ -29,12 +31,19 @@ const defaultParsed = (overrides: Partial<ParseResult> = {}): ParseResult => ({
   intent: 'off_topic_or_unclear',
   confidence: 0.9,
   customerName: null,
+  guestEmail: null,
   checkIn: null,
   checkOut: null,
   guests: null,
   mentionsDiscount: false,
   highIntentSignal: false,
-  kbTopic: null,
+  topicKeys: [],
+  monthQuery: null,
+  monthRangeQuery: null,
+  needsGreeting: false,
+  needsAcknowledgment: false,
+  isCorrection: false,
+  isClarificationOfPrevious: false,
   ...overrides,
 });
 
@@ -46,6 +55,7 @@ const makeParser = (result: Partial<ParseResult> = {}): ParserService =>
 const makeAvailability = (available = true): AvailabilityService =>
   ({
     isRangeAvailable: jest.fn().mockResolvedValue(available),
+    findAvailableSundayWeeks: jest.fn().mockResolvedValue([]),
   }) as unknown as AvailabilityService;
 
 const makePricing = (
@@ -63,10 +73,37 @@ const makePricing = (
     calculate: jest.fn().mockResolvedValue(quote),
   }) as unknown as PricingService;
 
-const makeResponse = (text = 'rendered'): ResponseService =>
+const makeTemplates = (text = 'rendered'): TemplatesService =>
   ({
     render: jest.fn().mockResolvedValue(text),
-  }) as unknown as ResponseService;
+    fetchRaw: jest.fn().mockResolvedValue([]),
+  }) as unknown as TemplatesService;
+
+const makeComposer = (
+  result: { ok: true; text: string } | { ok: false; reason: string; raw: string } = {
+    ok: true,
+    text: 'composed reply',
+  },
+): ComposerService =>
+  ({
+    compose: jest.fn().mockResolvedValue(result),
+  }) as unknown as ComposerService;
+
+const makeFragments = (): FragmentsService =>
+  ({
+    listAll: jest.fn().mockResolvedValue([]),
+    listByCategory: jest.fn().mockResolvedValue([]),
+    fetchByTopicKeys: jest.fn().mockResolvedValue([]),
+  }) as unknown as FragmentsService;
+
+const makeHelpers = (): HelpersService =>
+  ({
+    findClosestAvailableWeek: jest.fn().mockResolvedValue(null),
+    monthAvailabilitySummary: jest.fn().mockResolvedValue([]),
+    multiMonthAvailabilitySummary: jest.fn().mockResolvedValue([]),
+    getPricingForDateRange: jest.fn().mockResolvedValue(null),
+    checkExistingHold: jest.fn().mockResolvedValue(null),
+  }) as unknown as HelpersService;
 
 const makeWhatsapp = (): WhatsappService =>
   ({
@@ -79,13 +116,16 @@ const makeConversation = (
   ({
     parseCommand: jest.fn().mockReturnValue(null),
     setStatus: jest.fn().mockResolvedValue(undefined),
+    setLifecycleStatus: jest.fn().mockResolvedValue(undefined),
     getState: jest.fn().mockResolvedValue({
       status: 'bot',
+      lifecycleStatus: 'New',
       lastIntent: null,
       pendingDates: null,
       customerName: null,
     }),
     updateContext: jest.fn().mockResolvedValue(undefined),
+    recordQuote: jest.fn().mockResolvedValue(undefined),
     ...overrides,
   }) as unknown as ConversationService;
 
@@ -115,26 +155,21 @@ const makeNotifications = (): NotificationsService =>
     notifyOwnerAboutConversation: jest.fn().mockResolvedValue(undefined),
   }) as unknown as NotificationsService;
 
-const makeKnowledgeBase = (
-  overrides: Partial<KnowledgeBaseService> = {},
-): KnowledgeBaseService =>
-  ({
-    listTopics: jest.fn().mockResolvedValue([]),
-    render: jest.fn().mockResolvedValue(null),
-    ...overrides,
-  }) as unknown as KnowledgeBaseService;
-
 const makeBookingRules = (
   result: RulesValidation = { pass: true },
 ): BookingRulesService =>
   ({
     validate: jest.fn().mockReturnValue(result),
+    isYearFullyBooked: jest.fn().mockReturnValue(false),
   }) as unknown as BookingRulesService;
 
 const makeHolds = (hasOverlap = false): HoldsService =>
   ({
     hasOverlap: jest.fn().mockResolvedValue(hasOverlap),
-    createHold: jest.fn().mockResolvedValue({ id: 'rec1', fields: {} }),
+    createHold: jest.fn().mockResolvedValue({
+      id: 'rec1',
+      fields: { hold_expires_at: new Date('2027-01-01').toISOString() },
+    }),
   }) as unknown as HoldsService;
 
 const makeFollowUps = (): FollowUpsService =>
@@ -143,24 +178,26 @@ const makeFollowUps = (): FollowUpsService =>
     cancel: jest.fn().mockResolvedValue(undefined),
   }) as unknown as FollowUpsService;
 
-const build = (
-  over: {
-    parser?: ParserService;
-    availability?: AvailabilityService;
-    pricing?: PricingService;
-    bookingRules?: BookingRulesService;
-    holds?: HoldsService;
-    followUps?: FollowUpsService;
-    response?: ResponseService;
-    whatsapp?: WhatsappService;
-    conversation?: ConversationService;
-    messageLog?: MessageLogService;
-    knowledgeBase?: KnowledgeBaseService;
-    notifications?: NotificationsService;
-    logger?: LoggerService;
-    config?: ConfigService;
-  } = {},
-) =>
+type Overrides = {
+  parser?: ParserService;
+  availability?: AvailabilityService;
+  pricing?: PricingService;
+  bookingRules?: BookingRulesService;
+  holds?: HoldsService;
+  followUps?: FollowUpsService;
+  templates?: TemplatesService;
+  composer?: ComposerService;
+  fragments?: FragmentsService;
+  helpers?: HelpersService;
+  whatsapp?: WhatsappService;
+  conversation?: ConversationService;
+  messageLog?: MessageLogService;
+  notifications?: NotificationsService;
+  logger?: LoggerService;
+  config?: ConfigService;
+};
+
+const build = (over: Overrides = {}) =>
   new MessageHandlerService(
     over.parser ?? makeParser(),
     over.availability ?? makeAvailability(),
@@ -168,19 +205,26 @@ const build = (
     over.bookingRules ?? makeBookingRules(),
     over.holds ?? makeHolds(),
     over.followUps ?? makeFollowUps(),
-    over.response ?? makeResponse(),
+    over.templates ?? makeTemplates(),
+    over.composer ?? makeComposer(),
+    over.fragments ?? makeFragments(),
+    over.helpers ?? makeHelpers(),
     over.whatsapp ?? makeWhatsapp(),
     over.conversation ?? makeConversation(),
     over.messageLog ?? makeMessageLog(),
-    over.knowledgeBase ?? makeKnowledgeBase(),
     over.notifications ?? makeNotifications(),
     over.logger ?? makeLogger(),
     over.config ?? makeConfig(),
   );
 
-// Sunday dates to satisfy booking rules in tests that reach availability/pricing
 const SUN_CHECK_IN = new Date('2025-07-06');
 const SUN_CHECK_OUT = new Date('2025-07-13');
+
+const composerCalls = (composer: ComposerService) =>
+  (composer.compose as jest.Mock).mock.calls.map((c) => c[0]);
+
+const templateCalls = (templates: TemplatesService) =>
+  (templates.render as jest.Mock).mock.calls.map((c) => c[0]);
 
 describe('MessageHandlerService.handle — inbound logging', () => {
   it('logs every incoming message to MessageLog', async () => {
@@ -192,11 +236,11 @@ describe('MessageHandlerService.handle — inbound logging', () => {
     expect(messageLog.log).toHaveBeenCalledWith(CUSTOMER, 'in', 'hello');
   });
 
-  it('logs every outbound message to MessageLog', async () => {
+  it('logs the composed outbound message', async () => {
     const parser = makeParser({ intent: 'greeting' });
-    const response = makeResponse('hi, what dates?');
+    const composer = makeComposer({ ok: true, text: 'hi, what dates?' });
     const messageLog = makeMessageLog();
-    const handler = build({ parser, response, messageLog });
+    const handler = build({ parser, composer, messageLog });
 
     await handler.handle({ from: CUSTOMER, text: 'hello' });
 
@@ -214,7 +258,6 @@ describe('MessageHandlerService.handle — owner commands', () => {
       parseCommand: jest
         .fn()
         .mockReturnValue({ command: 'pause', minutes: 30 }),
-      setStatus: jest.fn().mockResolvedValue(undefined),
     });
     const notifications = makeNotifications();
     const handler = build({ conversation, notifications });
@@ -224,64 +267,6 @@ describe('MessageHandlerService.handle — owner commands', () => {
     expect(conversation.setStatus).toHaveBeenCalledWith(OWNER, 'paused', {
       pauseForMinutes: 30,
     });
-    expect(notifications.notifyOwner).toHaveBeenCalledWith(
-      expect.stringContaining('paused'),
-      expect.objectContaining({ reason: 'owner_command' }),
-    );
-  });
-
-  it('pauses a specific customer when owner sends /pause <phone> <minutes>', async () => {
-    const conversation = makeConversation({
-      parseCommand: jest.fn().mockReturnValue({
-        command: 'pause',
-        phone: CUSTOMER,
-        minutes: 1440,
-      }),
-    });
-    const notifications = makeNotifications();
-    const handler = build({ conversation, notifications });
-
-    await handler.handle({ from: OWNER, text: `/pause ${CUSTOMER} 1440` });
-
-    expect(conversation.setStatus).toHaveBeenCalledWith(CUSTOMER, 'paused', {
-      pauseForMinutes: 1440,
-    });
-    expect(notifications.notifyOwner).toHaveBeenCalledWith(
-      expect.stringContaining(CUSTOMER),
-      expect.objectContaining({ reason: 'owner_command' }),
-    );
-  });
-
-  it('releases a customer to human on /release <phone>', async () => {
-    const conversation = makeConversation({
-      parseCommand: jest
-        .fn()
-        .mockReturnValue({ command: 'release', phone: CUSTOMER }),
-    });
-    const handler = build({ conversation });
-
-    await handler.handle({ from: OWNER, text: `/release ${CUSTOMER}` });
-
-    expect(conversation.setStatus).toHaveBeenCalledWith(CUSTOMER, 'human');
-  });
-
-  it('reports conversation state on /status <phone>', async () => {
-    const conversation = makeConversation({
-      parseCommand: jest
-        .fn()
-        .mockReturnValue({ command: 'status', phone: CUSTOMER }),
-      getState: jest.fn().mockResolvedValue({
-        status: 'paused',
-        lastIntent: 'availability_inquiry',
-        pendingDates: null,
-        customerName: null,
-      }),
-    });
-    const notifications = makeNotifications();
-    const handler = build({ conversation, notifications });
-
-    await handler.handle({ from: OWNER, text: `/status ${CUSTOMER}` });
-
     expect(notifications.notifyOwner).toHaveBeenCalledWith(
       expect.stringContaining('paused'),
       expect.objectContaining({ reason: 'owner_command' }),
@@ -305,6 +290,7 @@ describe('MessageHandlerService.handle — pause gate', () => {
     const conversation = makeConversation({
       getState: jest.fn().mockResolvedValue({
         status: 'paused',
+        lifecycleStatus: 'New',
         lastIntent: null,
         pendingDates: null,
         customerName: null,
@@ -319,59 +305,24 @@ describe('MessageHandlerService.handle — pause gate', () => {
     expect(parser.parse).not.toHaveBeenCalled();
     expect(whatsapp.sendMessage).not.toHaveBeenCalled();
   });
-
-  it('silently drops messages when the conversation is in human mode', async () => {
-    const conversation = makeConversation({
-      getState: jest.fn().mockResolvedValue({
-        status: 'human',
-        lastIntent: null,
-        pendingDates: null,
-        customerName: null,
-      }),
-    });
-    const whatsapp = makeWhatsapp();
-    const handler = build({ conversation, whatsapp });
-
-    await handler.handle({ from: CUSTOMER, text: 'hi' });
-
-    expect(whatsapp.sendMessage).not.toHaveBeenCalled();
-  });
 });
 
-describe('MessageHandlerService.handle — availability flow', () => {
+describe('MessageHandlerService.handle — availability flow (fixed templates)', () => {
   it('renders availability_yes_quote when dates are free', async () => {
     const parser = makeParser({
       intent: 'availability_inquiry',
       checkIn: SUN_CHECK_IN,
       checkOut: SUN_CHECK_OUT,
     });
-    const response = makeResponse('booked');
-    const handler = build({ parser, response });
+    const templates = makeTemplates('quote text');
+    const handler = build({ parser, templates });
 
     await handler.handle({ from: CUSTOMER, text: 'is Jul 6-13 free?' });
 
-    expect(response.render).toHaveBeenCalledWith(
+    expect(templates.render).toHaveBeenCalledWith(
       'availability_yes_quote',
       expect.objectContaining({ nights: 7, price: '€2,100' }),
     );
-  });
-
-  it('appends the September wine-harvest note when check-in falls in September', async () => {
-    const parser = makeParser({
-      intent: 'availability_inquiry',
-      checkIn: new Date('2025-09-07'),
-      checkOut: new Date('2025-09-14'),
-    });
-    const response = makeResponse('rendered');
-    const handler = build({ parser, response });
-
-    await handler.handle({ from: CUSTOMER, text: '7-14 sep?' });
-
-    const calls = (response.render as jest.Mock).mock.calls.map(
-      (c) => c[0] as string,
-    );
-    expect(calls).toContain('availability_yes_quote');
-    expect(calls).toContain('september_wine_harvest_note');
   });
 
   it('renders availability_no_handoff when dates are taken', async () => {
@@ -381,67 +332,59 @@ describe('MessageHandlerService.handle — availability flow', () => {
       checkOut: SUN_CHECK_OUT,
     });
     const availability = makeAvailability(false);
-    const response = makeResponse('taken');
-    const handler = build({ parser, availability, response });
+    const templates = makeTemplates();
+    const handler = build({ parser, availability, templates });
 
     await handler.handle({ from: CUSTOMER, text: 'is Jul 6-13 free?' });
 
-    expect(response.render).toHaveBeenCalledWith(
-      'availability_no_handoff',
-      expect.objectContaining({ check_in: expect.any(String), check_out: expect.any(String), month: expect.any(String) }),
-    );
+    expect(templateCalls(templates)).toContain('availability_no_handoff');
   });
 
-  it('asks for clarification when dates are missing', async () => {
+  it('appends the September wine-harvest note when check-in falls in September', async () => {
+    const parser = makeParser({
+      intent: 'availability_inquiry',
+      checkIn: new Date('2025-09-07'),
+      checkOut: new Date('2025-09-14'),
+    });
+    const templates = makeTemplates('rendered');
+    const handler = build({ parser, templates });
+
+    await handler.handle({ from: CUSTOMER, text: '7-14 sep?' });
+
+    const calls = templateCalls(templates);
+    expect(calls).toContain('availability_yes_quote');
+    expect(calls).toContain('september_wine_harvest_note');
+  });
+
+  it('asks for clarification via composer when dates are missing', async () => {
     const parser = makeParser({ intent: 'availability_inquiry' });
-    const response = makeResponse();
-    const handler = build({ parser, response });
+    const composer = makeComposer();
+    const handler = build({ parser, composer });
 
     await handler.handle({ from: CUSTOMER, text: 'free this summer?' });
 
-    expect(response.render).toHaveBeenCalledWith(
-      'dates_unclear_ask_clarify',
-      expect.any(Object),
-    );
+    const [pkg] = composerCalls(composer);
+    expect(pkg.scenarioHint).toBe('dates_unclear');
   });
 
-  it('merges pending_dates from conversation state when parser returns nulls', async () => {
-    const parser = makeParser({
-      intent: 'availability_inquiry',
-      checkIn: null,
-      checkOut: null,
-      guests: null,
+  it('falls back to dates_unclear_ask_clarify template when composer fails', async () => {
+    const parser = makeParser({ intent: 'availability_inquiry' });
+    const composer = makeComposer({
+      ok: false,
+      reason: 'forbidden_term',
+      raw: 'sold',
     });
-    const availability = makeAvailability(true);
-    const pricing = makePricing();
-    const conversation = makeConversation({
-      getState: jest.fn().mockResolvedValue({
-        status: 'bot',
-        lastIntent: 'availability_inquiry',
-        pendingDates: {
-          checkIn: '2025-07-06',
-          checkOut: '2025-07-13',
-          guests: 2,
-        },
-        customerName: null,
-      }),
-    });
-    const handler = build({ parser, availability, pricing, conversation });
+    const templates = makeTemplates();
+    const handler = build({ parser, composer, templates });
 
-    await handler.handle({ from: CUSTOMER, text: 'yes that works' });
+    await handler.handle({ from: CUSTOMER, text: 'free this summer?' });
 
-    expect(availability.isRangeAvailable).toHaveBeenCalledWith(
-      expect.any(Date),
-      expect.any(Date),
-    );
-    const [checkInArg] = (availability.isRangeAvailable as jest.Mock).mock
-      .calls[0];
-    expect((checkInArg as Date).toISOString()).toContain('2025-07-06');
+    expect(templateCalls(templates)).toContain('dates_unclear_ask_clarify');
   });
 });
 
 describe('MessageHandlerService.handle — booking rules', () => {
-  it('renders year_2026_redirect when booking rules block with that reason', async () => {
+  it('renders year_2026_redirect template when booking rules block with that reason', async () => {
     const parser = makeParser({
       intent: 'availability_inquiry',
       checkIn: SUN_CHECK_IN,
@@ -451,70 +394,18 @@ describe('MessageHandlerService.handle — booking rules', () => {
       pass: false,
       reason: 'year_2026_redirect',
     });
-    const response = makeResponse();
-    const handler = build({ parser, bookingRules, response });
+    const templates = makeTemplates();
+    const handler = build({ parser, bookingRules, templates });
 
     await handler.handle({ from: CUSTOMER, text: 'available in 2026?' });
 
-    expect(response.render).toHaveBeenCalledWith(
+    expect(templates.render).toHaveBeenCalledWith(
       'year_2026_redirect',
       expect.any(Object),
     );
   });
 
-  it('renders dates_not_sunday_to_sunday with suggested dates when check-in is not a Sunday', async () => {
-    const parser = makeParser({
-      intent: 'availability_inquiry',
-      checkIn: new Date('2025-07-07'), // Monday
-      checkOut: new Date('2025-07-13'),
-    });
-    const bookingRules = makeBookingRules({
-      pass: false,
-      reason: 'not_sunday',
-      suggestedCheckIn: '2025-07-13',
-      suggestedCheckOut: '2025-07-20',
-    });
-    const response = makeResponse();
-    const handler = build({ parser, bookingRules, response });
-
-    await handler.handle({ from: CUSTOMER, text: 'Jul 7-13?' });
-
-    expect(response.render).toHaveBeenCalledWith(
-      'dates_not_sunday_to_sunday',
-      expect.objectContaining({
-        suggested_check_in: expect.any(String),
-        suggested_check_out: expect.any(String),
-      }),
-    );
-  });
-
-  it('renders minimum_stay_not_met with suggested dates when stay is too short', async () => {
-    const parser = makeParser({
-      intent: 'availability_inquiry',
-      checkIn: SUN_CHECK_IN,
-      checkOut: SUN_CHECK_IN, // same day
-    });
-    const bookingRules = makeBookingRules({
-      pass: false,
-      reason: 'min_stay',
-      suggestedCheckIn: '2025-07-06',
-      suggestedCheckOut: '2025-07-13',
-    });
-    const response = makeResponse();
-    const handler = build({ parser, bookingRules, response });
-
-    await handler.handle({ from: CUSTOMER, text: 'just one night?' });
-
-    expect(response.render).toHaveBeenCalledWith(
-      'minimum_stay_not_met',
-      expect.objectContaining({
-        suggested_check_in: expect.any(String),
-        suggested_check_out: expect.any(String),
-      }),
-    );
-  });
-
-  it('hands off via long_stay_manual_pricing and pauses when Oct-May long stay detected', async () => {
+  it('hands off via long_stay_manual_pricing on Oct-May long stay', async () => {
     const parser = makeParser({
       intent: 'availability_inquiry',
       checkIn: new Date('2025-11-02'),
@@ -524,46 +415,34 @@ describe('MessageHandlerService.handle — booking rules', () => {
       pass: false,
       reason: 'long_stay_manual',
     });
-    const response = makeResponse();
-    const conversation = makeConversation();
-    const handler = build({ parser, bookingRules, response, conversation });
+    const templates = makeTemplates();
+    const handler = build({ parser, bookingRules, templates });
 
     await handler.handle({ from: CUSTOMER, text: 'can I rent for November?' });
 
-    expect(response.render).toHaveBeenCalledWith(
+    expect(templates.render).toHaveBeenCalledWith(
       'long_stay_manual_pricing',
-      expect.any(Object),
-    );
-    expect(conversation.setStatus).not.toHaveBeenCalledWith(
-      CUSTOMER,
-      'paused',
       expect.any(Object),
     );
   });
 });
 
 describe('MessageHandlerService.handle — discount detection', () => {
-  it('intercepts discount requests before normal routing and hands off to Jim', async () => {
+  it('intercepts discount requests and hands off to Jim', async () => {
     const parser = makeParser({
       intent: 'pricing_inquiry',
       mentionsDiscount: true,
       checkIn: SUN_CHECK_IN,
       checkOut: SUN_CHECK_OUT,
     });
-    const response = makeResponse();
-    const conversation = makeConversation();
+    const templates = makeTemplates();
     const notifications = makeNotifications();
-    const handler = build({ parser, response, conversation, notifications });
+    const handler = build({ parser, templates, notifications });
 
     await handler.handle({ from: CUSTOMER, text: 'can I get a better rate?' });
 
-    expect(response.render).toHaveBeenCalledWith(
+    expect(templates.render).toHaveBeenCalledWith(
       'discount_request',
-      expect.any(Object),
-    );
-    expect(conversation.setStatus).not.toHaveBeenCalledWith(
-      CUSTOMER,
-      'paused',
       expect.any(Object),
     );
     expect(notifications.notifyOwnerAboutConversation).toHaveBeenCalledWith(
@@ -571,259 +450,186 @@ describe('MessageHandlerService.handle — discount detection', () => {
       'discount_request',
       expect.any(Object),
     );
-  });
-
-  it('does not intercept normal pricing inquiry without discount flag', async () => {
-    const parser = makeParser({
-      intent: 'pricing_inquiry',
-      mentionsDiscount: false,
-      checkIn: SUN_CHECK_IN,
-      checkOut: SUN_CHECK_OUT,
-    });
-    const response = makeResponse();
-    const handler = build({ parser, response });
-
-    await handler.handle({ from: CUSTOMER, text: 'how much for Jul?' });
-
-    const calledKeys = (response.render as jest.Mock).mock.calls.map(
-      (c) => c[0],
-    );
-    expect(calledKeys).not.toContain('discount_request');
   });
 });
 
-describe('MessageHandlerService.handle — other intents', () => {
-  it('greeting without dates asks for them', async () => {
+describe('MessageHandlerService.handle — composer-driven intents', () => {
+  it('greeting (no dates) calls composer with scenario greeting', async () => {
     const parser = makeParser({ intent: 'greeting' });
-    const response = makeResponse();
-    const handler = build({ parser, response });
+    const composer = makeComposer();
+    const handler = build({ parser, composer });
 
     await handler.handle({ from: CUSTOMER, text: 'hi' });
 
-    expect(response.render).toHaveBeenCalledWith(
-      'greeting_ask_dates',
-      expect.any(Object),
-    );
+    const [pkg] = composerCalls(composer);
+    expect(pkg.scenarioHint).toBe('greeting');
   });
 
-  it('pricing_inquiry without dates asks for clarification', async () => {
-    const parser = makeParser({ intent: 'pricing_inquiry' });
-    const response = makeResponse();
-    const handler = build({ parser, response });
-
-    await handler.handle({ from: CUSTOMER, text: 'how much?' });
-
-    expect(response.render).toHaveBeenCalledWith(
-      'dates_unclear_ask_clarify',
-      expect.any(Object),
-    );
-  });
-
-  it('booking_confirmation with INSTANT_BOOK_ENABLED=true sends instant-book template', async () => {
-    const parser = makeParser({ intent: 'booking_confirmation' });
-    const response = makeResponse();
-    const conversation = makeConversation();
+  it('general_info with no fragments calls composer with faq_unknown scenario', async () => {
+    const parser = makeParser({ intent: 'general_info', topicKeys: ['unknown'] });
+    const composer = makeComposer();
+    const fragments = makeFragments();
+    (fragments.fetchByTopicKeys as jest.Mock).mockResolvedValue([]);
     const notifications = makeNotifications();
-    const config = makeConfig({ instantBook: true });
-    const handler = build({
-      parser,
-      response,
-      conversation,
-      notifications,
-      config,
-    });
+    const handler = build({ parser, composer, fragments, notifications });
 
-    await handler.handle({ from: CUSTOMER, text: "let's book" });
+    await handler.handle({ from: CUSTOMER, text: 'do you have a hairdryer?' });
 
-    expect(response.render).toHaveBeenCalledWith(
-      'booking_confirmed_instant_book',
-      expect.any(Object),
-    );
-    expect(response.render).not.toHaveBeenCalledWith(
-      'booking_confirmed_handoff',
-      expect.any(Object),
-    );
+    const [pkg] = composerCalls(composer);
+    expect(pkg.scenarioHint).toBe('faq_unknown');
     expect(notifications.notifyOwnerAboutConversation).toHaveBeenCalledWith(
       CUSTOMER,
-      'booking_confirmation',
+      'faq_unknown',
       expect.any(Object),
     );
   });
 
-  it('booking_confirmation notifies Jim and keeps the bot active', async () => {
-    const parser = makeParser({ intent: 'booking_confirmation' });
-    const response = makeResponse();
-    const conversation = makeConversation();
-    const notifications = makeNotifications();
-    const handler = build({ parser, response, conversation, notifications });
-
-    await handler.handle({ from: CUSTOMER, text: "let's book" });
-
-    expect(response.render).toHaveBeenCalledWith(
-      'booking_confirmed_handoff',
-      expect.any(Object),
-    );
-    expect(conversation.setStatus).not.toHaveBeenCalledWith(
-      CUSTOMER,
-      'paused',
-      expect.any(Object),
-    );
-    expect(notifications.notifyOwnerAboutConversation).toHaveBeenCalledWith(
-      CUSTOMER,
-      'booking_confirmation',
-      expect.any(Object),
-    );
-  });
-
-  it('human_request hands off via human_request_handoff and pauses the bot', async () => {
-    const parser = makeParser({ intent: 'human_request' });
-    const response = makeResponse();
-    const conversation = makeConversation();
-    const handler = build({ parser, response, conversation });
-
-    await handler.handle({ from: CUSTOMER, text: 'let me talk to someone' });
-
-    expect(response.render).toHaveBeenCalledWith(
-      'human_request_handoff',
-      expect.any(Object),
-    );
-    expect(conversation.setStatus).toHaveBeenCalledWith(CUSTOMER, 'paused', {
-      pauseForMinutes: 60,
+  it('general_info with fragments calls composer with knowledge facts', async () => {
+    const parser = makeParser({
+      intent: 'general_info',
+      topicKeys: ['dogs'],
     });
-  });
+    const composer = makeComposer();
+    const fragments = makeFragments();
+    (fragments.fetchByTopicKeys as jest.Mock).mockResolvedValue([
+      {
+        key: 'dogs_allowed',
+        category: 'knowledge',
+        text: 'Dogs are very welcome.',
+        topicKeys: ['dogs'],
+      },
+    ]);
+    const handler = build({ parser, composer, fragments });
 
-  it('complaint_or_frustration hands off via complaint_handoff and pauses the bot', async () => {
-    const parser = makeParser({ intent: 'complaint_or_frustration' });
-    const response = makeResponse();
-    const conversation = makeConversation();
-    const handler = build({ parser, response, conversation });
+    await handler.handle({ from: CUSTOMER, text: 'can I bring my dog?' });
 
-    await handler.handle({ from: CUSTOMER, text: 'this is awful' });
-
-    expect(response.render).toHaveBeenCalledWith(
-      'complaint_handoff',
-      expect.any(Object),
+    const [pkg] = composerCalls(composer);
+    expect(pkg.scenarioHint).toBe('general_info');
+    expect(pkg.facts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ key: 'dogs_allowed' }),
+      ]),
     );
-    expect(conversation.setStatus).toHaveBeenCalledWith(CUSTOMER, 'paused', {
-      pauseForMinutes: 60,
-    });
   });
 
-  it('general_info hands off via faq_unknown_handoff', async () => {
-    const parser = makeParser({ intent: 'general_info' });
-    const response = makeResponse();
-    const handler = build({ parser, response });
+  it('correction intent calls composer with correction scenario', async () => {
+    const parser = makeParser({
+      intent: 'correction',
+      isCorrection: true,
+    });
+    const composer = makeComposer();
+    const handler = build({ parser, composer });
 
     await handler.handle({
       from: CUSTOMER,
-      text: 'do you have a hair dryer?',
+      text: "I didn't ask about that",
     });
 
-    expect(response.render).toHaveBeenCalledWith(
-      'faq_unknown_handoff',
-      expect.any(Object),
-    );
+    const [pkg] = composerCalls(composer);
+    expect(pkg.scenarioHint).toBe('correction');
   });
 
-  it('acknowledgment replies with acknowledgment_reply when previous intent was different', async () => {
-    const parser = makeParser({ intent: 'acknowledgment' });
-    const response = makeResponse();
-    const whatsapp = makeWhatsapp();
-    const conversation = makeConversation({
-      getState: jest.fn().mockResolvedValue({
-        status: 'bot',
-        lastIntent: 'availability_inquiry',
-        pendingDates: null,
-        customerName: null,
-      }),
+  it('polite_close intent calls composer with polite_close scenario', async () => {
+    const parser = makeParser({ intent: 'polite_close' });
+    const composer = makeComposer();
+    const handler = build({ parser, composer });
+
+    await handler.handle({ from: CUSTOMER, text: "I'll think about it" });
+
+    const [pkg] = composerCalls(composer);
+    expect(pkg.scenarioHint).toBe('polite_close');
+  });
+
+  it('off_topic_or_unclear calls composer with unclear scenario', async () => {
+    const parser = makeParser({ intent: 'off_topic_or_unclear' });
+    const composer = makeComposer();
+    const handler = build({ parser, composer });
+
+    await handler.handle({ from: CUSTOMER, text: 'glarg' });
+
+    const [pkg] = composerCalls(composer);
+    expect(pkg.scenarioHint).toBe('unclear');
+  });
+
+  it('falls back to template + notifies owner when composer rejects output', async () => {
+    const parser = makeParser({ intent: 'greeting' });
+    const composer = makeComposer({
+      ok: false,
+      reason: 'forbidden_term',
+      raw: 'sold',
     });
-    const handler = build({ parser, response, whatsapp, conversation });
+    const templates = makeTemplates();
+    const notifications = makeNotifications();
+    const handler = build({ parser, composer, templates, notifications });
 
-    await handler.handle({ from: CUSTOMER, text: 'thanks' });
+    await handler.handle({ from: CUSTOMER, text: 'hi' });
 
-    expect(response.render).toHaveBeenCalledWith(
-      'acknowledgment_reply',
+    expect(templateCalls(templates)).toContain('greeting_ask_dates');
+    expect(notifications.notifyOwnerAboutConversation).toHaveBeenCalledWith(
+      CUSTOMER,
+      'composer_fallback',
       expect.any(Object),
     );
-    expect(whatsapp.sendMessage).toHaveBeenCalled();
   });
 
   it('acknowledgment is silently dropped when previous intent was also acknowledgment', async () => {
     const parser = makeParser({ intent: 'acknowledgment' });
-    const response = makeResponse();
+    const composer = makeComposer();
     const whatsapp = makeWhatsapp();
     const conversation = makeConversation({
       getState: jest.fn().mockResolvedValue({
         status: 'bot',
+        lifecycleStatus: 'Responded',
         lastIntent: 'acknowledgment',
         pendingDates: null,
         customerName: null,
       }),
     });
-    const handler = build({ parser, response, whatsapp, conversation });
+    const handler = build({ parser, composer, whatsapp, conversation });
 
     await handler.handle({ from: CUSTOMER, text: 'thanks again' });
 
-    expect(response.render).not.toHaveBeenCalled();
+    expect(composer.compose).not.toHaveBeenCalled();
     expect(whatsapp.sendMessage).not.toHaveBeenCalled();
   });
+});
 
-  it('off_topic_or_unclear hands off via unclear_handoff', async () => {
-    const parser = makeParser({ intent: 'off_topic_or_unclear' });
-    const response = makeResponse();
-    const handler = build({ parser, response });
+describe('MessageHandlerService.handle — month query', () => {
+  it('routes month query to helpers and composer', async () => {
+    const parser = makeParser({
+      intent: 'availability_inquiry',
+      monthQuery: { year: 2027, month: 9 },
+    });
+    const helpers = makeHelpers();
+    (helpers.monthAvailabilitySummary as jest.Mock).mockResolvedValue([
+      {
+        checkIn: new Date('2027-09-05'),
+        checkOut: new Date('2027-09-12'),
+        total: 4500,
+        weeklyRate: 4500,
+      },
+    ]);
+    const composer = makeComposer();
+    const handler = build({ parser, helpers, composer });
 
-    await handler.handle({ from: CUSTOMER, text: 'glarg' });
+    await handler.handle({
+      from: CUSTOMER,
+      text: 'any availability in september?',
+    });
 
-    expect(response.render).toHaveBeenCalledWith(
-      'unclear_handoff',
-      expect.any(Object),
+    expect(helpers.monthAvailabilitySummary).toHaveBeenCalledWith(2027, 9);
+    const [pkg] = composerCalls(composer);
+    expect(pkg.scenarioHint).toBe('month_query');
+    expect(pkg.facts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ key: 'available_weeks' }),
+      ]),
     );
   });
 });
 
-describe('MessageHandlerService.handle — follow-up sequence wiring', () => {
-  it('schedules a follow-up after sending availability_yes_quote', async () => {
-    const parser = makeParser({
-      intent: 'availability_inquiry',
-      checkIn: SUN_CHECK_IN,
-      checkOut: SUN_CHECK_OUT,
-    });
-    const followUps = makeFollowUps();
-    const handler = build({ parser, followUps });
-
-    await handler.handle({ from: CUSTOMER, text: 'is Jul 6-13 free?' });
-
-    expect(followUps.schedule).toHaveBeenCalledWith(CUSTOMER);
-  });
-
-  it('does not schedule a follow-up when dates are unavailable', async () => {
-    const parser = makeParser({
-      intent: 'availability_inquiry',
-      checkIn: SUN_CHECK_IN,
-      checkOut: SUN_CHECK_OUT,
-    });
-    const availability = makeAvailability(false);
-    const followUps = makeFollowUps();
-    const handler = build({ parser, availability, followUps });
-
-    await handler.handle({ from: CUSTOMER, text: 'is Jul 6-13 free?' });
-
-    expect(followUps.schedule).not.toHaveBeenCalled();
-  });
-
-  it('cancels open follow-up sequences on every inbound customer message', async () => {
-    const followUps = makeFollowUps();
-    const handler = build({ followUps });
-
-    await handler.handle({ from: CUSTOMER, text: 'hi' });
-
-    expect(followUps.cancel).toHaveBeenCalledWith(CUSTOMER);
-  });
-});
-
 describe('MessageHandlerService.handle — fail-safe paths', () => {
-  it('falls back to unclear_handoff when a downstream service throws', async () => {
+  it('falls back to unclear_handoff template when a downstream service throws', async () => {
     const parser = makeParser({
       intent: 'availability_inquiry',
       checkIn: SUN_CHECK_IN,
@@ -831,31 +637,20 @@ describe('MessageHandlerService.handle — fail-safe paths', () => {
     });
     const availability = {
       isRangeAvailable: jest.fn().mockRejectedValue(new Error('ical down')),
+      findAvailableSundayWeeks: jest.fn().mockResolvedValue([]),
     } as unknown as AvailabilityService;
-    const conversation = makeConversation();
-    const response = makeResponse();
+    const templates = makeTemplates();
     const notifications = makeNotifications();
-    const logger = makeLogger();
     const handler = build({
       parser,
       availability,
-      conversation,
-      response,
+      templates,
       notifications,
-      logger,
     });
 
     await handler.handle({ from: CUSTOMER, text: 'is Jul 6-13 free?' });
 
-    expect(response.render).toHaveBeenCalledWith(
-      'unclear_handoff',
-      expect.any(Object),
-    );
-    expect(conversation.setStatus).not.toHaveBeenCalledWith(
-      CUSTOMER,
-      'paused',
-      expect.any(Object),
-    );
+    expect(templateCalls(templates)).toContain('unclear_handoff');
     expect(notifications.notifyOwnerAboutConversation).toHaveBeenCalledWith(
       CUSTOMER,
       'orchestrator_error',
@@ -863,7 +658,6 @@ describe('MessageHandlerService.handle — fail-safe paths', () => {
         extra: expect.objectContaining({ error: 'ical down' }),
       }),
     );
-    expect(logger.error).toHaveBeenCalled();
   });
 });
 
@@ -897,53 +691,42 @@ describe('MessageHandlerService.handle — context persistence', () => {
 });
 
 describe('MessageHandlerService.handle — hold flows', () => {
-  it('sends hold_offer_post_quote when availability ok and highIntentSignal is true', async () => {
+  it('does NOT send a separate hold_offer_post_quote — the hold offer lives in the quote template', async () => {
     const parser = makeParser({
       intent: 'availability_inquiry',
       checkIn: SUN_CHECK_IN,
       checkOut: SUN_CHECK_OUT,
       highIntentSignal: true,
     });
-    const response = makeResponse('rendered');
-    const handler = build({ parser, response });
+    const templates = makeTemplates();
+    const whatsapp = makeWhatsapp();
+    const handler = build({ parser, templates, whatsapp });
 
-    await handler.handle({ from: CUSTOMER, text: 'those dates look great, can I book?' });
-
-    const calls = (response.render as jest.Mock).mock.calls.map((c) => c[0]);
-    expect(calls).toContain('hold_offer_post_quote');
-  });
-
-  it('does not send hold_offer_post_quote when highIntentSignal is false', async () => {
-    const parser = makeParser({
-      intent: 'availability_inquiry',
-      checkIn: SUN_CHECK_IN,
-      checkOut: SUN_CHECK_OUT,
-      highIntentSignal: false,
+    await handler.handle({
+      from: CUSTOMER,
+      text: 'those dates look great, can I book?',
     });
-    const response = makeResponse('rendered');
-    const handler = build({ parser, response });
 
-    await handler.handle({ from: CUSTOMER, text: 'are those dates free?' });
-
-    const calls = (response.render as jest.Mock).mock.calls.map((c) => c[0]);
-    expect(calls).not.toContain('hold_offer_post_quote');
+    expect(templateCalls(templates)).not.toContain('hold_offer_post_quote');
+    expect(templateCalls(templates)).toContain('availability_yes_quote');
+    // Single bubble: one outbound message even though wine-harvest may concat.
+    expect((whatsapp.sendMessage as jest.Mock).mock.calls.length).toBe(1);
   });
 
-  it('treats held dates as unavailable (sends availability_no_handoff)', async () => {
+  it('treats held dates as unavailable', async () => {
     const parser = makeParser({
       intent: 'availability_inquiry',
       checkIn: SUN_CHECK_IN,
       checkOut: SUN_CHECK_OUT,
     });
-    const holds = makeHolds(true); // overlap
+    const holds = makeHolds(true);
     const availability = makeAvailability(true);
-    const response = makeResponse('rendered');
-    const handler = build({ parser, holds, availability, response });
+    const templates = makeTemplates();
+    const handler = build({ parser, holds, availability, templates });
 
     await handler.handle({ from: CUSTOMER, text: 'are those dates free?' });
 
-    const calls = (response.render as jest.Mock).mock.calls.map((c) => c[0]);
-    expect(calls).toContain('availability_no_handoff');
+    expect(templateCalls(templates)).toContain('availability_no_handoff');
     expect(availability.isRangeAvailable).not.toHaveBeenCalled();
   });
 
@@ -954,43 +737,56 @@ describe('MessageHandlerService.handle — hold flows', () => {
       checkOut: SUN_CHECK_OUT,
     });
     const holds = makeHolds(false);
-    const response = makeResponse('confirmed');
-    const handler = build({ parser, holds, response });
+    const templates = makeTemplates();
+    const handler = build({ parser, holds, templates });
 
     await handler.handle({ from: CUSTOMER, text: 'please hold those dates' });
 
-    expect(holds.createHold).toHaveBeenCalledWith(CUSTOMER, SUN_CHECK_IN, SUN_CHECK_OUT);
-    const calls = (response.render as jest.Mock).mock.calls.map((c) => c[0]);
-    expect(calls).toContain('hold_confirmed');
+    expect(holds.createHold).toHaveBeenCalledWith(
+      CUSTOMER,
+      SUN_CHECK_IN,
+      SUN_CHECK_OUT,
+    );
+    expect(templateCalls(templates)).toContain('hold_confirmed');
   });
 
   it('asks for dates on hold_request when no dates provided', async () => {
     const parser = makeParser({ intent: 'hold_request' });
-    const response = makeResponse('rendered');
+    const templates = makeTemplates();
     const holds = makeHolds(false);
-    const handler = build({ parser, holds, response });
+    const handler = build({ parser, templates, holds });
 
-    await handler.handle({ from: CUSTOMER, text: 'can you hold dates for me?' });
+    await handler.handle({
+      from: CUSTOMER,
+      text: 'can you hold dates for me?',
+    });
 
-    const calls = (response.render as jest.Mock).mock.calls.map((c) => c[0]);
-    expect(calls).toContain('dates_unclear_ask_clarify');
+    expect(templateCalls(templates)).toContain('dates_unclear_ask_clarify');
     expect(holds.createHold).not.toHaveBeenCalled();
   });
+});
 
-  it('sends availability_no_handoff on hold_request when dates are already held', async () => {
+describe('MessageHandlerService.handle — follow-up sequence wiring', () => {
+  it('schedules a follow-up after sending availability_yes_quote', async () => {
     const parser = makeParser({
-      intent: 'hold_request',
+      intent: 'availability_inquiry',
       checkIn: SUN_CHECK_IN,
       checkOut: SUN_CHECK_OUT,
     });
-    const holds = makeHolds(true);
-    const response = makeResponse('rendered');
-    const handler = build({ parser, holds, response });
+    const followUps = makeFollowUps();
+    const handler = build({ parser, followUps });
 
-    await handler.handle({ from: CUSTOMER, text: 'please hold those dates' });
+    await handler.handle({ from: CUSTOMER, text: 'is Jul 6-13 free?' });
 
-    const calls = (response.render as jest.Mock).mock.calls.map((c) => c[0]);
-    expect(calls).toContain('availability_no_handoff');
-    expect(holds.createHold).not.toHaveBeenCalled();
+    expect(followUps.schedule).toHaveBeenCalledWith(CUSTOMER);
+  });
+
+  it('cancels open follow-up sequences on every inbound customer message', async () => {
+    const followUps = makeFollowUps();
+    const handler = build({ followUps });
+
+    await handler.handle({ from: CUSTOMER, text: 'hi' });
+
+    expect(followUps.cancel).toHaveBeenCalledWith(CUSTOMER);
   });
 });

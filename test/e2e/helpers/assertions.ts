@@ -11,6 +11,15 @@ export function expectTemplateUsed(h: Harness, key: string): void {
   }
 }
 
+export function expectComposed(h: Harness, scenario: string): void {
+  const composeCalls = h.composeCalls();
+  if (!composeCalls.some((c) => c.scenarioHint === scenario)) {
+    throw new Error(
+      `expected composer to be called with scenario "${scenario}". Got: [${composeCalls.map((c) => c.scenarioHint).join(', ')}]`,
+    );
+  }
+}
+
 export function expectTemplateNotUsed(h: Harness, key: string): void {
   const calls = h.renderCalls();
   if (calls.includes(key)) {

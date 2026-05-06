@@ -23,7 +23,7 @@ describe('Scenario 9 — Group enquiries', () => {
       parse: {
         intent: 'general_info',
         confidence: 0.85,
-        kbTopic: 'sleeps',
+        topicKeys: ['sleeps'],
         guests: 10,
       },
     });
@@ -35,19 +35,18 @@ describe('Scenario 9 — Group enquiries', () => {
       parse: {
         intent: 'general_info',
         confidence: 0.85,
-        kbTopic: 'sleeps',
+        topicKeys: ['sleeps'],
         guests: 11,
       },
     });
     expectMessageSentTo(h, CUSTOMER, 'fold-out');
   });
 
-  it('9.3 — 12 adults (over capacity) → unclear handoff and Jim notified', async () => {
+  it('9.3 — 12 adults (over capacity) → unclear scenario via composer, Jim notified', async () => {
     await sendIncoming(h, '12 adults — does that fit?', {
       parse: { intent: 'off_topic_or_unclear', confidence: 0.4, guests: 12 },
     });
-    const calls = h.renderCalls();
-    expect(calls).toContain('unclear_handoff');
-    expect(h.provider.sent.some((m) => m.text.toLowerCase().includes('attention'))).toBe(true);
+    const composeCalls = h.composeCalls();
+    expect(composeCalls.some((c) => c.scenarioHint === 'unclear')).toBe(true);
   });
 });

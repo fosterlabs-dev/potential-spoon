@@ -20,6 +20,7 @@
     "test:e2e": "jest --config ./test/jest-e2e.json",
     "seed:templates": "TS_NODE_COMPILER_OPTIONS='{\"module\":\"commonjs\"}' node --env-file=.env -r ts-node/register scripts/seed-templates.ts",
     "seed:kb": "TS_NODE_COMPILER_OPTIONS='{\"module\":\"commonjs\"}' node --env-file=.env -r ts-node/register scripts/seed-knowledge-base.ts",
+    "seed:fragments": "TS_NODE_COMPILER_OPTIONS='{\"module\":\"commonjs\"}' node --env-file=.env -r ts-node/register scripts/seed-fragments.ts",
     "seed:pricing": "TS_NODE_COMPILER_OPTIONS='{\"module\":\"commonjs\"}' node --env-file=.env -r ts-node/register scripts/seed-pricing.ts"
   },
   "dependencies": {

@@ -5,14 +5,17 @@ import { AirtableModule } from '../../../src/airtable/airtable.module';
 import { AvailabilityService } from '../../../src/availability/availability.service';
 import { AvailabilityModule } from '../../../src/availability/availability.module';
 import { BookingRulesModule } from '../../../src/booking-rules/booking-rules.module';
+import { ComposerModule } from '../../../src/composer/composer.module';
+import { ComposerService, CompositionPackage } from '../../../src/composer/composer.service';
 import { ConversationModule } from '../../../src/conversation/conversation.module';
 import { FollowUpsCronService } from '../../../src/follow-ups/follow-ups-cron.service';
 import { FollowUpsModule } from '../../../src/follow-ups/follow-ups.module';
 import { FollowUpsService } from '../../../src/follow-ups/follow-ups.service';
+import { FragmentsModule } from '../../../src/fragments/fragments.module';
+import { HelpersModule } from '../../../src/helpers/helpers.module';
 import { HoldsCronService } from '../../../src/holds/holds-cron.service';
 import { HoldsModule } from '../../../src/holds/holds.module';
 import { HoldsService } from '../../../src/holds/holds.service';
-import { KnowledgeBaseModule } from '../../../src/knowledge-base/knowledge-base.module';
 import { LoggerModule } from '../../../src/logger/logger.module';
 import { MessageLogModule } from '../../../src/messagelog/messagelog.module';
 import { EmailService } from '../../../src/notifications/email.service';
@@ -22,9 +25,8 @@ import { MessageHandlerService } from '../../../src/orchestrator/message-handler
 import { ParserModule } from '../../../src/parser/parser.module';
 import { ParserService } from '../../../src/parser/parser.service';
 import { PricingModule } from '../../../src/pricing/pricing.module';
-import { ResponseModule } from '../../../src/response/response.module';
-import { ResponseService } from '../../../src/response/response.service';
 import { TemplatesModule } from '../../../src/templates/templates.module';
+import { TemplatesService } from '../../../src/templates/templates.service';
 import { WHATSAPP_PROVIDER, WhatsappService } from '../../../src/whatsapp/whatsapp.service';
 import { WhatsappModule } from '../../../src/whatsapp/whatsapp.module';
 import { seedAll } from '../fixtures/seed';
@@ -46,15 +48,16 @@ export type Harness = {
   holdsCron: HoldsCronService;
   followUpsCron: FollowUpsCronService;
   followUps: FollowUpsService;
-  response: ResponseService;
+  templates: TemplatesService;
+  composer: ComposerService;
   airtable: FakeAirtable;
   parser: FakeParser;
   availability: FakeAvailability;
   provider: FakeWhatsAppProvider;
   email: FakeEmailService;
-  // Spies on render so assertions can introspect template usage
   renderCalls: () => string[];
   renderArgs: () => Array<{ key: string; vars: Record<string, unknown> }>;
+  composeCalls: () => CompositionPackage[];
   shutdown: () => Promise<void>;
 };
 
@@ -72,7 +75,6 @@ export async function buildHarness(
   for (const [key, value] of Object.entries(options.env ?? {})) {
     process.env[key] = value;
   }
-  process.env.RESPONSE_MODE = 'template';
   process.env.AIRTABLE_API_KEY = 'test';
   process.env.AIRTABLE_BASE_ID = 'test';
   process.env.ANTHROPIC_API_KEY = 'test';
@@ -101,8 +103,9 @@ export async function buildHarness(
       BookingRulesModule,
       PricingModule,
       TemplatesModule,
-      ResponseModule,
-      KnowledgeBaseModule,
+      FragmentsModule,
+      HelpersModule,
+      ComposerModule,
       ParserModule,
       ConversationModule,
       MessageLogModule,
@@ -133,17 +136,35 @@ export async function buildHarness(
   const holdsCron = app.get(HoldsCronService);
   const followUpsCron = app.get(FollowUpsCronService);
   const followUps = app.get(FollowUpsService);
-  const response = app.get(ResponseService);
+  const templates = app.get(TemplatesService);
+  const composer = app.get(ComposerService);
 
   const recorder = new TranscriptRecorder();
 
-  const origRender = response.render.bind(response);
+  const origRender = templates.render.bind(templates);
   const renderSpy = jest
-    .spyOn(response, 'render')
-    .mockImplementation(((key: string, vars?: Record<string, unknown>) => {
+    .spyOn(templates, 'render')
+    .mockImplementation((async (key: string, vars?: Record<string, unknown>) => {
+      const out = await origRender(
+        key,
+        (vars ?? {}) as Parameters<typeof templates.render>[1],
+      );
       recorder.push({ kind: 'render', key, vars: vars ?? {} });
-      return origRender(key, vars as Parameters<typeof response.render>[1]);
-    }) as typeof response.render);
+      return out;
+    }) as typeof templates.render);
+
+  const composeSpy = jest
+    .spyOn(composer, 'compose')
+    .mockImplementation(async (pkg: CompositionPackage) => {
+      const scenario = pkg.scenarioHint ?? 'composed';
+      const factSummary = pkg.facts.map((f) => f.key).join(',');
+      const factTexts = pkg.facts.map((f) => f.text).join('\n\n');
+      const text = factTexts
+        ? `[composed:${scenario}] ${factTexts}`
+        : `[composed:${scenario}] reply`;
+      recorder.push({ kind: 'render', key: `__compose__:${scenario}`, vars: { factSummary } });
+      return { ok: true, text };
+    });
 
   const origHandle = handler.handle.bind(handler);
   (handler as unknown as { handle: typeof handler.handle }).handle = (async (
@@ -165,7 +186,8 @@ export async function buildHarness(
     holdsCron,
     followUpsCron,
     followUps,
-    response,
+    templates,
+    composer,
     airtable,
     parser,
     availability,
@@ -177,6 +199,7 @@ export async function buildHarness(
         key: c[0] as string,
         vars: (c[1] ?? {}) as Record<string, unknown>,
       })),
+    composeCalls: () => composeSpy.mock.calls.map((c) => c[0] as CompositionPackage),
     shutdown: async () => {
       try {
         const state =

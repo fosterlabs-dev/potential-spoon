@@ -1,5 +1,9 @@
 import { sendIncoming } from '../helpers/send-message';
-import { expectRenderVar, expectTemplateUsed } from '../helpers/assertions';
+import {
+  expectComposed,
+  expectRenderVar,
+  expectTemplateUsed,
+} from '../helpers/assertions';
 import { buildHarness, Harness } from '../helpers/test-app';
 
 describe('Scenario 3 — Availability + pricing (2027)', () => {
@@ -64,11 +68,11 @@ describe('Scenario 3 — Availability + pricing (2027)', () => {
     expectRenderVar(h, 'availability_yes_quote', 'price', /€2,49[0-9]/);
   });
 
-  it('3.5 — vague "early September" → asks for clarification', async () => {
+  it('3.5 — vague "early September" → asks for clarification via composer', async () => {
     await sendIncoming(h, 'Anything in early September 2027?', {
       parse: { intent: 'availability_inquiry', confidence: 0.7 },
     });
-    expectTemplateUsed(h, 'dates_unclear_ask_clarify');
+    expectComposed(h, 'dates_unclear');
   });
 
   it('3.6 — Aug 29 - Sep 5 2027 → quote + wine harvest note (any night in Sept)', async () => {
