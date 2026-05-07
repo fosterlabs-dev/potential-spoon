@@ -16,6 +16,7 @@ import { FollowUpsService } from '../follow-ups/follow-ups.service';
 import { Fragment, FragmentsService } from '../fragments/fragments.service';
 import { HelpersService } from '../helpers/helpers.service';
 import { HoldsService } from '../holds/holds.service';
+import { KnowledgeBaseService } from '../knowledge-base/knowledge-base.service';
 import { LoggerService } from '../logger/logger.service';
 import { MessageLogService } from '../messagelog/messagelog.service';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -60,6 +61,7 @@ export class MessageHandlerService {
     private readonly templates: TemplatesService,
     private readonly composer: ComposerService,
     private readonly fragments: FragmentsService,
+    private readonly knowledgeBase: KnowledgeBaseService,
     private readonly helpers: HelpersService,
     private readonly whatsapp: WhatsappService,
     private readonly conversation: ConversationService,
@@ -470,12 +472,12 @@ export class MessageHandlerService {
     merged: MergedIntent,
     history: HistoryMessage[],
   ): Promise<void> {
-    const name = merged.customerName ?? '';
-    const knowledgeFragments = await this.fetchKnowledgeFragmentsSafe(
+    const knowledgeFacts = await this.assembleKnowledgeFacts(
       parsed.topicKeys,
+      merged.customerName,
     );
 
-    if (knowledgeFragments.length === 0) {
+    if (knowledgeFacts.length === 0) {
       await this.composeOrFallback(from, parsed, merged, history, {
         scenario: 'faq_unknown',
         fallbackKey: 'faq_unknown_handoff',
@@ -491,7 +493,8 @@ export class MessageHandlerService {
     await this.composeOrFallback(from, parsed, merged, history, {
       scenario: 'general_info',
       fallbackKey: 'faq_unknown_handoff',
-      knowledgeFragments,
+      knowledgeFragments: [],
+      extraFacts: knowledgeFacts,
     });
   }
 
@@ -689,16 +692,19 @@ export class MessageHandlerService {
     Array<{ topicKey: string; questionExamples: string }>
   > {
     try {
-      const all = await this.fragments.listByCategory('knowledge');
-      const hints = new Map<string, string>();
-      for (const f of all) {
-        for (const t of f.topicKeys) {
-          if (!hints.has(t)) hints.set(t, '');
-        }
+      const [fragments, kbTopics] = await Promise.all([
+        this.fragments.listByCategory('knowledge').catch(() => []),
+        this.knowledgeBase.listTopics().catch(() => []),
+      ]);
+      const examplesByKey = new Map<string, string>();
+      for (const t of kbTopics) examplesByKey.set(t.topicKey, t.questionExamples);
+      const allKeys = new Set<string>(examplesByKey.keys());
+      for (const f of fragments) {
+        for (const t of f.topicKeys) allKeys.add(t);
       }
-      return Array.from(hints.entries()).map(([topicKey, questionExamples]) => ({
+      return Array.from(allKeys).map((topicKey) => ({
         topicKey,
-        questionExamples,
+        questionExamples: examplesByKey.get(topicKey) ?? '',
       }));
     } catch (err) {
       this.logger.warn('templates', 'topic hint fetch failed', {
@@ -706,6 +712,41 @@ export class MessageHandlerService {
       });
       return [];
     }
+  }
+
+  private async assembleKnowledgeFacts(
+    topicKeys: string[],
+    customerName: string | null,
+  ): Promise<CompositionFact[]> {
+    if (topicKeys.length === 0) return [];
+
+    const fragments = await this.fetchKnowledgeFragmentsSafe(topicKeys);
+    const facts: CompositionFact[] = fragments.map((f) => ({
+      key: f.key,
+      text: f.text,
+    }));
+
+    const covered = new Set<string>();
+    for (const f of fragments) {
+      for (const t of f.topicKeys) covered.add(t);
+    }
+    const missing = topicKeys.filter((k) => !covered.has(k));
+
+    for (const key of missing) {
+      try {
+        const answer = await this.knowledgeBase.render(key, {
+          name: customerName ?? '',
+        });
+        if (answer) facts.push({ key: `kb_${key}`, text: answer });
+      } catch (err) {
+        this.logger.warn('templates', 'KB fallback failed', {
+          key,
+          error: (err as Error).message,
+        });
+      }
+    }
+
+    return facts;
   }
 
   private async runOwnerCommand(cmd: ParsedCommand): Promise<void> {

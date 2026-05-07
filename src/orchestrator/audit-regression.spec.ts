@@ -16,6 +16,7 @@ import { FollowUpsService } from '../follow-ups/follow-ups.service';
 import { FragmentsService } from '../fragments/fragments.service';
 import { HelpersService } from '../helpers/helpers.service';
 import { HoldsService } from '../holds/holds.service';
+import { KnowledgeBaseService } from '../knowledge-base/knowledge-base.service';
 import { LoggerService } from '../logger/logger.service';
 import { MessageLogService } from '../messagelog/messagelog.service';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -60,6 +61,7 @@ type Wires = {
   templates?: TemplatesService;
   composer?: ComposerService;
   fragments?: FragmentsService;
+  knowledgeBase?: KnowledgeBaseService;
   helpers?: HelpersService;
   conversation?: ConversationService;
   notifications?: NotificationsService;
@@ -96,6 +98,12 @@ const buildHandler = (w: Wires = {}): MessageHandlerService => {
       listByCategory: jest.fn().mockResolvedValue([]),
       fetchByTopicKeys: jest.fn().mockResolvedValue([]),
     } as unknown as FragmentsService);
+  const knowledgeBase =
+    w.knowledgeBase ??
+    ({
+      listTopics: jest.fn().mockResolvedValue([]),
+      render: jest.fn().mockResolvedValue(null),
+    } as unknown as KnowledgeBaseService);
   const helpers =
     w.helpers ??
     ({
@@ -199,6 +207,7 @@ const buildHandler = (w: Wires = {}): MessageHandlerService => {
     templates,
     composer,
     fragments,
+    knowledgeBase,
     helpers,
     whatsapp,
     conversation,

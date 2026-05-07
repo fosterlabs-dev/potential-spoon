@@ -7,6 +7,7 @@ import { FollowUpsService } from '../follow-ups/follow-ups.service';
 import { FragmentsService } from '../fragments/fragments.service';
 import { HelpersService } from '../helpers/helpers.service';
 import { HoldsService } from '../holds/holds.service';
+import { KnowledgeBaseService } from '../knowledge-base/knowledge-base.service';
 import { LoggerService } from '../logger/logger.service';
 import { MessageLogService } from '../messagelog/messagelog.service';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -95,6 +96,12 @@ const makeFragments = (): FragmentsService =>
     listByCategory: jest.fn().mockResolvedValue([]),
     fetchByTopicKeys: jest.fn().mockResolvedValue([]),
   }) as unknown as FragmentsService;
+
+const makeKnowledgeBase = (): KnowledgeBaseService =>
+  ({
+    listTopics: jest.fn().mockResolvedValue([]),
+    render: jest.fn().mockResolvedValue(null),
+  }) as unknown as KnowledgeBaseService;
 
 const makeHelpers = (): HelpersService =>
   ({
@@ -188,6 +195,7 @@ type Overrides = {
   templates?: TemplatesService;
   composer?: ComposerService;
   fragments?: FragmentsService;
+  knowledgeBase?: KnowledgeBaseService;
   helpers?: HelpersService;
   whatsapp?: WhatsappService;
   conversation?: ConversationService;
@@ -208,6 +216,7 @@ const build = (over: Overrides = {}) =>
     over.templates ?? makeTemplates(),
     over.composer ?? makeComposer(),
     over.fragments ?? makeFragments(),
+    over.knowledgeBase ?? makeKnowledgeBase(),
     over.helpers ?? makeHelpers(),
     over.whatsapp ?? makeWhatsapp(),
     over.conversation ?? makeConversation(),

@@ -21,7 +21,9 @@
     "seed:templates": "TS_NODE_COMPILER_OPTIONS='{\"module\":\"commonjs\"}' node --env-file=.env -r ts-node/register scripts/seed-templates.ts",
     "seed:kb": "TS_NODE_COMPILER_OPTIONS='{\"module\":\"commonjs\"}' node --env-file=.env -r ts-node/register scripts/seed-knowledge-base.ts",
     "seed:fragments": "TS_NODE_COMPILER_OPTIONS='{\"module\":\"commonjs\"}' node --env-file=.env -r ts-node/register scripts/seed-fragments.ts",
-    "seed:pricing": "TS_NODE_COMPILER_OPTIONS='{\"module\":\"commonjs\"}' node --env-file=.env -r ts-node/register scripts/seed-pricing.ts"
+    "seed:pricing": "TS_NODE_COMPILER_OPTIONS='{\"module\":\"commonjs\"}' node --env-file=.env -r ts-node/register scripts/seed-pricing.ts",
+    "trigger:follow-ups": "TS_NODE_COMPILER_OPTIONS='{\"module\":\"commonjs\"}' node --env-file=.env -r ts-node/register scripts/trigger-follow-ups.ts",
+    "trigger:holds": "TS_NODE_COMPILER_OPTIONS='{\"module\":\"commonjs\"}' node --env-file=.env -r ts-node/register scripts/trigger-holds.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.90.0",

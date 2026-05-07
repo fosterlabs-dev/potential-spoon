@@ -32,10 +32,22 @@ const FRAGMENTS: FragmentRow[] = [
 
   // ── Knowledge (factual answers, no greeting/sign-off) ────────────────
   {
+    key: 'pool_overview',
+    category: 'knowledge',
+    text: "Yes, there's a lovely outdoor pool at the house, set in a beautiful spot overlooking the countryside. It's one of the favourite features of Bonté Maison, especially over the long summer days.",
+    topic_keys: ['pool_overview'],
+  },
+  {
     key: 'pool_unheated',
     category: 'knowledge',
     text: "The pool isn't heated — it's warmed naturally by the sun. From around June through September it sits at a really lovely temperature.",
     topic_keys: ['pool_heated'],
+  },
+  {
+    key: 'outdoor_area',
+    category: 'knowledge',
+    text: "There's a wonderful outdoor area, a terrace for meals, plenty of space to relax, and lovely views over the surrounding countryside and vineyards. In the warmer months most of the day naturally spends itself outside.",
+    topic_keys: ['outdoor_area'],
   },
   {
     key: 'sleeps',
@@ -90,6 +102,18 @@ const FRAGMENTS: FragmentRow[] = [
     category: 'knowledge',
     text: 'Bonté Maison is near Duras in south-west France — between Bordeaux and Bergerac, in the heart of wine country.',
     topic_keys: ['location'],
+  },
+  {
+    key: 'how_to_book',
+    category: 'knowledge',
+    text: 'The quickest way to book is straight through the website at www.bontemaison.com. All cards accepted with secure 3D payment, and full confirmation details follow by email.',
+    topic_keys: ['how_to_book'],
+  },
+  {
+    key: 'deposit',
+    category: 'knowledge',
+    text: 'Deposit and balance details are all set out on the website at www.bontemaison.com when you book. Everything is laid out clearly there, including what is due and when.',
+    topic_keys: ['deposit'],
   },
 
   // ── Nudges (gentle prompts toward booking) ───────────────────────────

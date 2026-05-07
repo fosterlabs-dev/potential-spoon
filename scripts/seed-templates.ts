@@ -83,25 +83,26 @@ const TEMPLATES: TemplateRow[] = [
   // ── 2. AVAILABILITY & QUOTING ─────────────────────────────────────────
 
   // availability_yes_quote
+  // Structure (per Jim, 2026-05): anchor → offer + Sunday changeover → desire → action (tell, don't ask) with link.
   {
     key: 'availability_yes_quote',
     variant: 1,
-    text: `Great news, {check_in} to {check_out} is available, {nights} nights at {price}.\nIt's a lovely time to be here, warm evenings, local markets, food and wine to enjoy.\nIf it helps, I can pencil those dates in while you have a think.\n\nMany thanks`,
+    text: `Lovely, that's a great week to be here.\n\n{check_in} to {check_out} is available, {nights} nights at {price}. Sunday is changeover day, it makes the journey through France much easier.\n\nA brilliant time of year, long evenings, everything open and a real atmosphere locally.\n\nI can hold the dates for you while you decide, no rush at all, or take care of the booking, just say the word. Or book direct here: www.bontemaison.com\n\nMany thanks`,
   },
   {
     key: 'availability_yes_quote',
     variant: 2,
-    text: `Good news, {check_in} to {check_out} is available, {nights} nights at {price}.\nThe house really comes into its own in the evenings that time of year.\nHappy to hold those dates for a few days while you decide, just say the word.\n\nMany thanks`,
+    text: `That's a fabulous week to come down.\n\n{check_in} to {check_out} is free, {nights} nights at {price}. Sunday changeover, it works much better for travel through France.\n\nThe house really comes into its own that time of year, warm evenings, vineyards busy, plenty going on locally.\n\nHappy to pencil those dates in for you while you have a think, or sort the booking out, just say the word. Direct booking is here too: www.bontemaison.com\n\nMany thanks`,
   },
   {
     key: 'availability_yes_quote',
     variant: 3,
-    text: `{check_in} to {check_out} is available, {nights} nights at {price}.\nIf you'd like, I can pencil those dates in for you while you have a think, it's always worth doing as we do get a lot of enquiries.\n\nMany thanks`,
+    text: `Lovely choice of dates.\n\n{check_in} to {check_out} is available, {nights} nights at {price}. Sunday is the changeover, makes travel through France much smoother.\n\nA great time to relax and explore, markets, vineyards, long days outside.\n\nI'll hold the week for you while you decide, no rush, or take care of the booking, just say the word. Or book direct here: www.bontemaison.com\n\nMany thanks`,
   },
   {
     key: 'availability_yes_quote',
     variant: 4,
-    text: `The villa is free from {check_in} to {check_out}, {nights} nights at {price}.\nA real atmosphere here that time of year, vineyards, markets, long evenings outside.\nWould you like me to hold those dates for a few days?\n\nMany thanks`,
+    text: `That's a great week to be here.\n\nThe villa is free from {check_in} to {check_out}, {nights} nights at {price}. Sunday changeover day, the journey through France runs much smoother that way.\n\nA real atmosphere here at that time, vineyards, markets, evenings outside.\n\nI can hold the dates for you while you have a think, or sort the booking out, just say the word. Direct booking link: www.bontemaison.com\n\nMany thanks`,
   },
 
   // september_wine_harvest_note (inserted before the sign-off when stay touches September)
@@ -117,21 +118,22 @@ const TEMPLATES: TemplateRow[] = [
   },
 
   // availability_no_handoff
+  // Structure (per Jim, 2026-05): anchor → state the no clearly → handoff to Jim.
   // NOTE: do NOT suggest alternative dates here — Jim handles those.
   {
     key: 'availability_no_handoff',
     variant: 1,
-    text: `Unfortunately {check_in} to {check_out} is already reserved, {month} tends to book up early.\n\nMany thanks`,
+    text: `Thanks for thinking of us.\n\nUnfortunately {check_in} to {check_out} is already reserved, {month} tends to book up early.\n\nI'll get back to you shortly with what we have around those dates.\n\nMany thanks`,
   },
   {
     key: 'availability_no_handoff',
     variant: 2,
-    text: `Thank you for your message. That week is already reserved.\n\nMany thanks`,
+    text: `Appreciate you coming back to me.\n\nThat week is already reserved I'm afraid.\n\nLet me have a look at what we have close to your dates and I'll come back to you shortly.\n\nMany thanks`,
   },
   {
     key: 'availability_no_handoff',
     variant: 3,
-    text: `Appreciate you reaching out.\n\nThose dates are already reserved I'm afraid.\n\nMany thanks`,
+    text: `Thanks for the message.\n\n{check_in} to {check_out} is already reserved, {month} is one of our busier times here.\n\nI'll come back to you shortly with what's still around.\n\nMany thanks`,
   },
 
   // availability_subject_to_confirmation

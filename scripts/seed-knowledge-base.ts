@@ -20,9 +20,19 @@ type KbRow = {
 
 const KB_ENTRIES: KbRow[] = [
   {
+    topic_key: 'pool_overview',
+    question_examples: 'is there a pool, do you have a pool, swimming pool, what about the pool, pool size',
+    answer: `Yes — there's a lovely outdoor pool at the house, set in a beautiful spot overlooking the countryside.\n\nIt's one of the favourite features of Bonté Maison, especially over the long summer days. Guests tend to spend a lot of the day in and around it.`,
+  },
+  {
     topic_key: 'pool_heated',
     question_examples: 'is the pool heated, pool temperature, warm pool',
     answer: `The pool isn't heated — it's warmed naturally by the sun, which works really well here.\n\nFrom around June through to September it sits at a really lovely temperature, and guests tend to spend most of the day in and around it.\n\nIt's one of those pools that just feels right for the setting — especially with the views and long summer days.`,
+  },
+  {
+    topic_key: 'outdoor_area',
+    question_examples: 'outdoor area, garden, terrace, outside, outdoor space, BBQ, grounds',
+    answer: `There's a wonderful outdoor area to enjoy — a terrace for meals, plenty of space to relax, and lovely views over the surrounding countryside and vineyards.\n\nIn the warmer months it's where most of the day naturally spends itself: long lunches outside, evenings on the terrace, and quiet time around the pool.`,
   },
   {
     topic_key: 'sleeps',
@@ -68,6 +78,16 @@ const KB_ENTRIES: KbRow[] = [
     topic_key: 'location',
     question_examples: 'where is the property, location, nearest airport, how to get there',
     answer: `Bonté Maison is near Duras in south-west France — between Bordeaux and Bergerac, right in the middle of wine country.\n\nIt's a quiet, private spot surrounded by vineyards, with some fantastic medieval towns nearby: Eymet, Duras and Bergerac are all close. It's a great base for exploring the Dordogne.`,
+  },
+  {
+    topic_key: 'how_to_book',
+    question_examples: 'how do I book, how can I book, how to reserve, booking process, how do I confirm, how to pay',
+    answer: `The quickest way to book is straight through the website at www.bontemaison.com.\n\nYou can confirm everything and secure the dates there directly, all cards accepted with secure 3D payment, and you'll receive full confirmation details by email.`,
+  },
+  {
+    topic_key: 'deposit',
+    question_examples: 'deposit, how much deposit, what is the deposit, deposit needed, deposit amount, payment terms, booking terms',
+    answer: `Deposit and balance details are all set out on the website when you book at www.bontemaison.com.\n\nEverything is laid out clearly there, including the deposit and what's due when.`,
   },
 ];
 
