@@ -228,7 +228,7 @@ describe('NotificationsService', () => {
       expect(waText).toContain('Status: Responded');
       expect(waText).toContain('Last intent: pricing_inquiry');
       expect(waText).toContain('Dates: 2027-07-11 → 2027-07-18');
-      expect(waText).toContain('Quote: €3,400');
+      expect(waText).toContain('Quote: £3,400');
       expect(waText).toContain('available');
       expect(waText).toContain('Email: sarah@example.com');
       expect(waText).toContain('Message: "any chance of a discount?"');

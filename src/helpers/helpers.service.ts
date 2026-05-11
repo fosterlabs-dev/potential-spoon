@@ -40,10 +40,19 @@ export class HelpersService {
     if (weeks.length === 0) return null;
 
     const targetSunday = this.snapToSundayUtc(target);
+    // Score: |distance|. On ties, prefer a future alternative — guests usually
+    // plan forward, and the same-season "drift later" feels more natural than
+    // proposing a week from earlier in the year.
+    const score = (w: AvailableWeek): [number, number] => {
+      const delta = w.checkIn.getTime() - targetSunday.getTime();
+      const isPast = delta < 0 ? 1 : 0;
+      return [Math.abs(delta), isPast];
+    };
     const closest = weeks.reduce((best, w) => {
-      const dBest = Math.abs(best.checkIn.getTime() - targetSunday.getTime());
-      const dCur = Math.abs(w.checkIn.getTime() - targetSunday.getTime());
-      return dCur < dBest ? w : best;
+      const [absBest, pastBest] = score(best);
+      const [absCur, pastCur] = score(w);
+      if (absCur !== absBest) return absCur < absBest ? w : best;
+      return pastCur < pastBest ? w : best;
     });
     const offsetDays =
       (closest.checkIn.getTime() - targetSunday.getTime()) / DAY_MS;

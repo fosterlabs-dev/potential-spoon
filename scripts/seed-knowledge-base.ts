@@ -27,7 +27,7 @@ const KB_ENTRIES: KbRow[] = [
   {
     topic_key: 'pool_heated',
     question_examples: 'is the pool heated, pool temperature, warm pool',
-    answer: `The pool isn't heated — it's warmed naturally by the sun, which works really well here.\n\nFrom around June through to September it sits at a really lovely temperature, and guests tend to spend most of the day in and around it.\n\nIt's one of those pools that just feels right for the setting — especially with the views and long summer days.`,
+    answer: `The pool isn't heated, but it's warmed naturally by the sun and from around June through September it sits at a really lovely temperature.\n\nThere are also two hot tubs at the house, which are lovely for relaxing in the evenings whatever the season.`,
   },
   {
     topic_key: 'outdoor_area',
@@ -82,12 +82,32 @@ const KB_ENTRIES: KbRow[] = [
   {
     topic_key: 'how_to_book',
     question_examples: 'how do I book, how can I book, how to reserve, booking process, how do I confirm, how to pay',
-    answer: `The quickest way to book is straight through the website at www.bontemaison.com.\n\nYou can confirm everything and secure the dates there directly, all cards accepted with secure 3D payment, and you'll receive full confirmation details by email.`,
+    answer: `The easiest way is to book directly online at www.bontemaison.com — just select Booking from the menu and the system will guide you through everything, including the 25% deposit to secure your dates.\n\nThe balance is due 8 weeks before arrival. All major cards are accepted with secure 3D payment, in £ or €.\n\nI'm also very happy to handle the booking for you, or to jump on a quick call if that would help.`,
   },
   {
     topic_key: 'deposit',
     question_examples: 'deposit, how much deposit, what is the deposit, deposit needed, deposit amount, payment terms, booking terms',
-    answer: `Deposit and balance details are all set out on the website when you book at www.bontemaison.com.\n\nEverything is laid out clearly there, including the deposit and what's due when.`,
+    answer: `A 25% deposit secures your dates, with the remaining balance due 8 weeks before arrival.\n\nWe also take a £200 refundable security deposit, which is returned after your stay. Payments can be made in £ or €, all major cards accepted.\n\nIf you let me know the week you'd like, I can confirm the exact deposit amount and either send the booking details through or point you to the online booking at www.bontemaison.com.`,
+  },
+  {
+    topic_key: 'property_overview',
+    question_examples: 'tell me about the villa, tell me about the property, what is the house like, what is the villa, describe the property, can you tell me about, more info about the house',
+    answer: `Bonté is a private luxury villa in the Dordogne, set in peaceful countryside close to Duras, Eymet and Bergerac, and well placed for the Bordeaux wine region.\n\nIt sleeps 10 across five bedrooms (two king-size and three twin), making it ideal for families, friends and multi-generational stays. We can also accommodate an 11th guest if it's a child, using a good quality fold-out bed.\n\nThe house is reserved exclusively for your group and includes the private pool, two hot tubs, generous outdoor dining space, a BBQ, pétanque court, fast WiFi, bedding, towels, pool towels, cleaning and a welcome pack on arrival.`,
+  },
+  {
+    topic_key: 'bike_hire',
+    question_examples: 'bike hire, cycling, can we cycle, hire bikes, rent bikes, bike rental, can we hire bikes',
+    answer: `Yes, the area around Bonté is excellent for cycling, with quiet country roads and vineyard routes around Duras and Eymet.\n\nLocal companies can arrange bike hire and in many cases either deliver to the house or meet guests nearby. If cycling is something you'd like to build into your stay, I'd be very happy to point you towards suitable local options before you arrive.`,
+  },
+  {
+    topic_key: 'local_area',
+    question_examples: 'what is the local area like, what is there to do, things to do, nearby, what is around, area, surroundings, restaurants, eating out, where to eat',
+    answer: `There's so much to enjoy in the local area. The medieval towns of Eymet, Duras and Bergerac are all close by, and the wider Dordogne is a wonderful region to explore.\n\nDuras is around 10 minutes away and the Château des Vigiers is close by for a more traditional setting, including relaxed dining on the terrace. Eymet and Bergerac are excellent for evenings out with market squares, wine bars and highly rated French restaurants. In July and August, booking ahead is sensible.\n\nVineyards, local markets, restaurants and wine experiences are all easily within reach. You can also see our eating-out guide at www.bontemaison.com/eating-out.`,
+  },
+  {
+    topic_key: 'air_conditioning',
+    question_examples: 'air conditioning, AC, A/C, is there air con, do you have air conditioning, is it hot inside',
+    answer: `There isn't air conditioning at Bonté. The house is a traditional French property with thick stone walls and shutters, which keep it comfortably cool during the warmer months when guests use the shutters during the day and open up in the evenings. There are also fans in the bedrooms.\n\nMost of the summer is naturally spent outside by the pool, on the terrace or in the evening shade.`,
   },
 ];
 

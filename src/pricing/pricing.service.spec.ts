@@ -73,6 +73,32 @@ describe('PricingService.quote (pure)', () => {
     expect(q.total).toBe(3995 * 2);
   });
 
+  it('treats band end_date as exclusive: check-in on the boundary belongs to the next band', () => {
+    const rules = [
+      rule({
+        startDate: new Date('2027-05-30'),
+        endDate: new Date('2027-07-11'),
+        weeklyRate: 3995,
+        label: 'Summer',
+      }),
+      rule({
+        startDate: new Date('2027-07-11'),
+        endDate: new Date('2027-08-29'),
+        weeklyRate: 4995,
+        label: 'High Summer',
+      }),
+    ];
+
+    const q = service.quote(
+      rules,
+      new Date('2027-07-11'),
+      new Date('2027-07-18'),
+    );
+
+    expect(q.label).toBe('High Summer');
+    expect(q.weeklyRate).toBe(4995);
+  });
+
   it('prefers the narrower rule when two cover the check-in date', () => {
     const rules = [
       rule({

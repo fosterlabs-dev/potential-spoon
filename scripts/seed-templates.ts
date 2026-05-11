@@ -117,9 +117,7 @@ const TEMPLATES: TemplateRow[] = [
     text: `Worth mentioning, September is wine harvest season here, so the whole area comes alive with tastings, markets and vineyard events.`,
   },
 
-  // availability_no_handoff
-  // Structure (per Jim, 2026-05): anchor → state the no clearly → handoff to Jim.
-  // NOTE: do NOT suggest alternative dates here — Jim handles those.
+  // availability_no_handoff — fallback when no nearby alternative is available
   {
     key: 'availability_no_handoff',
     variant: 1,
@@ -134,6 +132,19 @@ const TEMPLATES: TemplateRow[] = [
     key: 'availability_no_handoff',
     variant: 3,
     text: `Thanks for the message.\n\n{check_in} to {check_out} is already reserved, {month} is one of our busier times here.\n\nI'll come back to you shortly with what's still around.\n\nMany thanks`,
+  },
+
+  // availability_no_with_alternative — asked week reserved, but a nearby week is open.
+  // Offer the alternative + hold, no Jim handoff needed.
+  {
+    key: 'availability_no_with_alternative',
+    variant: 1,
+    text: `Thank you for your message.\n\n{check_in} to {check_out} is already reserved, {month} tends to book up early.\n\nThe nearest available week is {alt_check_in} to {alt_check_out}, at {alt_price} for the 7 nights with exclusive use of the villa.\n\nIf that could work, I'd be happy to hold it for a short time while you consider.\n\nMany thanks`,
+  },
+  {
+    key: 'availability_no_with_alternative',
+    variant: 2,
+    text: `Thanks for getting in touch.\n\n{check_in} to {check_out} is already reserved — {month} is one of our busiest periods. The closest week still open is {alt_check_in} to {alt_check_out}, at {alt_price} for 7 nights, the villa reserved exclusively for your group.\n\nIf you have any flexibility, I can hold that week briefly while you decide.\n\nMany thanks`,
   },
 
   // availability_subject_to_confirmation
@@ -204,17 +215,17 @@ const TEMPLATES: TemplateRow[] = [
   {
     key: 'booking_confirmed_handoff',
     variant: 1,
-    text: `That's wonderful, delighted you'd like to book.\n\nCould you share your email address? I'll send over everything you need to confirm the week.\n\nMany thanks`,
+    text: `That's wonderful, delighted you'd like to go ahead.\n\nThe easiest way is to book directly online at www.bontemaison.com — select Booking from the menu and the system will guide you through everything, including the 25% deposit to secure the dates. The balance is due 8 weeks before arrival.\n\nI can hold the week for a short time while you complete the booking, and I'm very happy to handle it for you directly or jump on a quick call if that would help.\n\nMany thanks`,
   },
   {
     key: 'booking_confirmed_handoff',
     variant: 2,
-    text: `Thank you, that's great to hear.\n\nIf you could drop me your email address, I'll send over the booking details and next steps.\n\nMany thanks`,
+    text: `Lovely to hear.\n\nYou're very welcome to book directly online at www.bontemaison.com — just select Booking from the menu. A 25% deposit secures your dates, with the balance due 8 weeks before arrival. All major cards accepted.\n\nI can hold the week briefly while you finalise plans, or handle the booking for you — just say the word.\n\nMany thanks`,
   },
   {
     key: 'booking_confirmed_handoff',
     variant: 3,
-    text: `Perfect. Could you share your email address and Jim will send over the booking details to confirm.\n\nMany thanks`,
+    text: `That's great to hear.\n\nYou can book directly at www.bontemaison.com by selecting Booking from the menu — the 25% deposit secures the dates and the balance is due 8 weeks before arrival. Cards accepted in £ or €.\n\nI'm happy to hold the week for a short time while you complete the booking, or take care of it for you if easier.\n\nMany thanks`,
   },
 
   // booking_email_received_handoff (sent when the customer provides their email)
@@ -264,16 +275,16 @@ const TEMPLATES: TemplateRow[] = [
 
   // ── 6. SPECIAL CASES ──────────────────────────────────────────────────
 
-  // year_2026_redirect
+  // year_2026_redirect — {month_phrase} is either "" or " for August" (orchestrator provides leading space)
   {
     key: 'year_2026_redirect',
     variant: 1,
-    text: `Thanks for getting in touch.\n\n2026 is fully booked, I'm afraid, it went very quickly this year. However, I do have good availability in 2027 if you'd like to look at dates there?\n\nMany thanks`,
+    text: `Thanks for getting in touch.\n\n2026 is fully booked{month_phrase}, I'm afraid, it went very quickly this year. I do have some lovely weeks still available in 2027 if you'd like to look at dates there.\n\nMany thanks`,
   },
   {
     key: 'year_2026_redirect',
     variant: 2,
-    text: `Thank you for your message.\n\nUnfortunately 2026 is now fully reserved. I do still have some lovely weeks available in 2027 though, if you'd like to share roughly when you're thinking, I'll send options.\n\nMany thanks`,
+    text: `Thank you for your message.\n\n2026 is now fully reserved{month_phrase}. We are taking bookings for 2027 and some of the most popular summer weeks are already going. If you have a rough month or week in mind, I'll send the best remaining options.\n\nMany thanks`,
   },
 
   // long_stay_manual_pricing
@@ -288,16 +299,16 @@ const TEMPLATES: TemplateRow[] = [
     text: `Thank you for getting in touch.\n\nLonger stays between October and May are something I price individually. Leave it with me and I'll come back to you shortly with options.\n\nMany thanks`,
   },
 
-  // discount_request
+  // discount_request — in-line decline, no "come back to you"
   {
     key: 'discount_request',
     variant: 1,
-    text: `Thanks for asking.\n\nI don't usually build discounts in as most weeks book well in advance, but let me take a look at your dates and see what might be possible. I'll come back to you shortly.\n\nMany thanks`,
+    text: `Thank you for asking.\n\nWe don't usually reduce individual peak-week rates, as the most popular dates tend to book well in advance and the rate reflects exclusive use of the full villa — pool, two hot tubs, outdoor dining, cleaning, linen, towels and the welcome pack.\n\nFor longer stays of two weeks or more, I'm sometimes able to reflect the saving from one less changeover. If you share the week or weeks you're considering, I can look at the best option for you.\n\nMany thanks`,
   },
   {
     key: 'discount_request',
     variant: 2,
-    text: `Thanks, let me have a look at the dates and get back to you on that.\n\nMany thanks`,
+    text: `Thanks for asking.\n\nWe don't usually discount individual weeks — Bonté is reserved exclusively for one group and the most sought-after dates tend to go well in advance. For stays of two weeks or more I can sometimes build in a small saving, as there's one less changeover.\n\nIf you let me know the dates you're considering, I'll look at the best option for you.\n\nMany thanks`,
   },
 
   // group_size_confirmation
@@ -342,7 +353,7 @@ const TEMPLATES: TemplateRow[] = [
   {
     key: 'nudge_mid_stay',
     variant: 1,
-    text: `Just checking in to make sure everything is perfect for you at the house.\n\nHopefully you've had a chance to settle in and enjoy it properly.\n\nThere's loads happening in the area, one of the best sources for what's on is the local tourism Facebook page: https://www.facebook.com/search/top?q=office%20de%20tourisme%20du%20pays%20de%20duras\n\nIf you need anything at all during your stay, please let me know.\n\nEnjoy the rest of your week.\n\nMany thanks`,
+    text: `Just checking in to make sure everything is perfect for you at the house.\n\nHopefully you've had a chance to settle in and enjoy it properly. There's plenty going on in the area, the local markets, vineyards and night markets are all great in the evenings.\n\nIf you need anything at all during your stay, please let me know.\n\nEnjoy the rest of your week.\n\nMany thanks`,
   },
   {
     key: 'nudge_thank_you',

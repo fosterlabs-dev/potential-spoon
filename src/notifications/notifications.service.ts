@@ -143,7 +143,7 @@ export class NotificationsService {
       if (snapshot.priceQuoted || snapshot.availabilityResult) {
         const quoteBits: string[] = [];
         if (snapshot.priceQuoted) {
-          quoteBits.push(`Quote: €${Math.round(snapshot.priceQuoted).toLocaleString('en-GB')}`);
+          quoteBits.push(`Quote: £${Math.round(snapshot.priceQuoted).toLocaleString('en-GB')}`);
         }
         if (snapshot.availabilityResult) {
           quoteBits.push(snapshot.availabilityResult);

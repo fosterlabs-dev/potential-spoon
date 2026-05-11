@@ -26,7 +26,7 @@ import {
   ParseResult,
   ParserService,
 } from '../parser/parser.service';
-import { PricingService } from '../pricing/pricing.service';
+import { PricingService, Quote } from '../pricing/pricing.service';
 import { TemplatesService, TemplateVars } from '../templates/templates.service';
 import { WhatsappService } from '../whatsapp/whatsapp.service';
 
@@ -307,7 +307,10 @@ export class MessageHandlerService {
     if (!rule.pass) {
       switch (rule.reason) {
         case 'year_2026_redirect':
-          await this.sendTemplate(from, 'year_2026_redirect', { name });
+          await this.sendTemplate(from, 'year_2026_redirect', {
+            name,
+            month_phrase: this.monthPhraseForDate(merged.checkIn),
+          });
           return;
         case 'not_sunday':
           await this.sendTemplate(from, 'dates_not_sunday_to_sunday', {
@@ -343,12 +346,20 @@ export class MessageHandlerService {
     const datesLabel = `${this.isoDate(merged.checkIn)} → ${this.isoDate(merged.checkOut)}`;
 
     if (!icalOk) {
-      await this.sendTemplate(from, 'availability_no_handoff', {
+      const sent = await this.trySendUnavailableWithAlternative(
+        from,
         name,
-        check_in: this.formatDate(merged.checkIn),
-        check_out: this.formatDate(merged.checkOut),
-        month: this.monthName(merged.checkIn),
-      });
+        merged.checkIn,
+        merged.checkOut,
+      );
+      if (!sent) {
+        await this.sendTemplate(from, 'availability_no_handoff', {
+          name,
+          check_in: this.formatDate(merged.checkIn),
+          check_out: this.formatDate(merged.checkOut),
+          month: this.monthName(merged.checkIn),
+        });
+      }
       await this.recordQuoteSafe(from, datesLabel, 0, 'unavailable');
       await this.notifications.notifyOwnerAboutConversation(
         from,
@@ -380,8 +391,9 @@ export class MessageHandlerService {
       }
     }
 
-    await this.whatsapp.sendMessage(from, combined);
-    await this.messageLog.log(from, 'out', combined);
+    const finalCombined = this.ensureWebsiteLink(combined);
+    await this.whatsapp.sendMessage(from, finalCombined);
+    await this.messageLog.log(from, 'out', finalCombined);
     await this.markResponded(from);
 
     await this.recordQuoteSafe(from, datesLabel, quote.total, 'available');
@@ -411,7 +423,10 @@ export class MessageHandlerService {
     if (!rule.pass) {
       switch (rule.reason) {
         case 'year_2026_redirect':
-          await this.sendTemplate(from, 'year_2026_redirect', { name });
+          await this.sendTemplate(from, 'year_2026_redirect', {
+            name,
+            month_phrase: this.monthPhraseForDate(merged.checkIn),
+          });
           return;
         case 'not_sunday':
           await this.sendTemplate(from, 'dates_not_sunday_to_sunday', {
@@ -509,7 +524,10 @@ export class MessageHandlerService {
     const allBlocked =
       years.length > 0 && years.every((y) => this.bookingRules.isYearFullyBooked(y));
     if (allBlocked) {
-      await this.sendTemplate(from, 'year_2026_redirect', { name });
+      await this.sendTemplate(from, 'year_2026_redirect', {
+        name,
+        month_phrase: this.monthQueryPhrase(parsed),
+      });
       return;
     }
 
@@ -578,8 +596,9 @@ export class MessageHandlerService {
     const result = await this.composer.compose(pkg);
 
     if (result.ok) {
-      await this.whatsapp.sendMessage(from, result.text);
-      await this.messageLog.log(from, 'out', result.text);
+      const finalText = this.ensureWebsiteLink(result.text);
+      await this.whatsapp.sendMessage(from, finalText);
+      await this.messageLog.log(from, 'out', finalText);
       await this.markResponded(from);
       return;
     }
@@ -641,6 +660,14 @@ export class MessageHandlerService {
       facts.push({ key: 'scenario_guidance', text: scenarioGuidance });
     }
 
+    // Some scenarios should always nudge toward booking even without an explicit
+    // high-intent signal — a month-availability ask or a polite ack after we've
+    // just quoted options. Without this, the bot lists weeks then ends flat,
+    // never offering to hold.
+    const SCENARIOS_FORCE_NUDGE = new Set(['month_query', 'polite_close']);
+    const needsNudgeToBook =
+      parsed.highIntentSignal || SCENARIOS_FORCE_NUDGE.has(options.scenario);
+
     return {
       scenarioHint: options.scenario,
       guestName: merged.customerName,
@@ -648,7 +675,7 @@ export class MessageHandlerService {
       toneFlags: {
         needsGreeting: parsed.needsGreeting,
         needsAcknowledgment: parsed.needsAcknowledgment,
-        needsNudgeToBook: parsed.highIntentSignal,
+        needsNudgeToBook,
         needsSignOff: true,
       },
       facts,
@@ -796,7 +823,8 @@ export class MessageHandlerService {
     vars: TemplateVars,
     options: { override?: boolean } = {},
   ): Promise<void> {
-    const text = await this.templates.render(key, vars);
+    const rendered = await this.templates.render(key, vars);
+    const text = this.ensureWebsiteLink(rendered);
     await this.whatsapp.sendMessage(to, text, options);
     await this.messageLog.log(to, 'out', text);
     await this.markResponded(to);
@@ -951,7 +979,82 @@ export class MessageHandlerService {
   }
 
   private formatPrice(amount: number): string {
-    return `€${Math.round(amount).toLocaleString('en-GB')}`;
+    return `£${Math.round(amount).toLocaleString('en-GB')}`;
+  }
+
+  private monthPhraseForDate(d: Date): string {
+    return ` for ${this.monthName(d)}`;
+  }
+
+  private async trySendUnavailableWithAlternative(
+    from: string,
+    name: string,
+    checkIn: Date,
+    checkOut: Date,
+  ): Promise<boolean> {
+    let closest: Awaited<
+      ReturnType<HelpersService['findClosestAvailableWeek']>
+    > = null;
+    try {
+      closest = await this.helpers.findClosestAvailableWeek(checkIn, 60);
+    } catch (err) {
+      this.logger.warn('availability', 'closest-week lookup failed', {
+        from,
+        error: (err as Error).message,
+      });
+      return false;
+    }
+    if (!closest) return false;
+
+    let altQuote: Quote | null = null;
+    try {
+      altQuote = await this.pricing.calculate(closest.checkIn, closest.checkOut);
+    } catch (err) {
+      this.logger.warn('pricing', 'alt-week pricing failed', {
+        from,
+        error: (err as Error).message,
+      });
+      return false;
+    }
+
+    try {
+      await this.sendTemplate(from, 'availability_no_with_alternative', {
+        name,
+        check_in: this.formatDate(checkIn),
+        check_out: this.formatDate(checkOut),
+        month: this.monthName(checkIn),
+        alt_check_in: this.formatDate(closest.checkIn),
+        alt_check_out: this.formatDate(closest.checkOut),
+        alt_price: this.formatPrice(altQuote.total),
+      });
+      return true;
+    } catch (err) {
+      this.logger.warn('templates', 'alt-week template send failed', {
+        from,
+        error: (err as Error).message,
+      });
+      return false;
+    }
+  }
+
+  private monthQueryPhrase(parsed: ParseResult): string {
+    if (parsed.monthQuery) {
+      const monthName = new Date(
+        Date.UTC(parsed.monthQuery.year, parsed.monthQuery.month - 1, 1),
+      ).toLocaleDateString('en-GB', { month: 'long', timeZone: 'UTC' });
+      return ` for ${monthName}`;
+    }
+    if (parsed.monthRangeQuery) {
+      const start = new Date(
+        Date.UTC(
+          parsed.monthRangeQuery.start.year,
+          parsed.monthRangeQuery.start.month - 1,
+          1,
+        ),
+      ).toLocaleDateString('en-GB', { month: 'long', timeZone: 'UTC' });
+      return ` for ${start}`;
+    }
+    return '';
   }
 
   private monthName(d: Date): string {
@@ -963,7 +1066,9 @@ export class MessageHandlerService {
       case 'acknowledgment':
         return "The customer just said something like 'thanks' or 'thank you' to close the loop. Reply warmly with a 'you're welcome' style line — for example 'You're welcome, just shout if anything else comes up.' or 'My pleasure — happy to help any time.' Do NOT open with 'Perfect' / 'Great' / 'Got it'. Do NOT promise future contact like 'You'll hear from me soon' unless a fact says so. One short sentence is enough.";
       case 'polite_close':
-        return "The customer is winding down ('I'll think about it', 'let me check with my partner'). Reply with a warm, no-pressure line acknowledging their pause. One short sentence is enough.";
+        return "The customer is winding down ('I'll think about it', 'cool that sounds nice', 'let me check with my partner'). Reply warmly with no pressure. IMPORTANT: if the recent history shows we've just listed availability or quoted a price, weave in a single short hold offer — e.g. 'happy to hold one of those weeks briefly while you decide'. If there's no recent quote/availability in history, just a warm acknowledgement is enough.";
+      case 'month_query':
+        return "You're presenting availability (or lack of it) for a month or month range. After listing the available weeks, gently offer to hold one of them while the customer decides. If no weeks are available in the asked month, offer the nearest alternatives AND still mention that you can hold a week briefly.";
       case 'correction':
         return "The customer is correcting or pushing back on YOUR previous reply. Apologise briefly for the misunderstanding and ask what they'd like to know. Don't escalate.";
       case 'unclear':
@@ -1039,6 +1144,17 @@ export class MessageHandlerService {
       if (new Date(t).getUTCMonth() === month1Indexed - 1) return true;
     }
     return false;
+  }
+
+  /**
+   * Adds the website URL on its own line before the sign-off if not already
+   * present anywhere in the body. Used as a safety net so every customer-facing
+   * reply ends up with a link, even on paths where the composer didn't weave
+   * one in or a fixed template forgot.
+   */
+  private ensureWebsiteLink(body: string): string {
+    if (/bontemaison\.com/i.test(body)) return body;
+    return this.insertBeforeSignOff(body, WEBSITE_URL);
   }
 
   /**

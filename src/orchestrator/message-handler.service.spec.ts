@@ -256,7 +256,7 @@ describe('MessageHandlerService.handle — inbound logging', () => {
     expect(messageLog.log).toHaveBeenCalledWith(
       CUSTOMER,
       'out',
-      'hi, what dates?',
+      'hi, what dates?\n\nwww.bontemaison.com',
     );
   });
 });
@@ -330,7 +330,7 @@ describe('MessageHandlerService.handle — availability flow (fixed templates)',
 
     expect(templates.render).toHaveBeenCalledWith(
       'availability_yes_quote',
-      expect.objectContaining({ nights: 7, price: '€2,100' }),
+      expect.objectContaining({ nights: 7, price: '£2,100' }),
     );
   });
 

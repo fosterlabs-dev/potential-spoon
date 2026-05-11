@@ -40,7 +40,7 @@ const FRAGMENTS: FragmentRow[] = [
   {
     key: 'pool_unheated',
     category: 'knowledge',
-    text: "The pool isn't heated — it's warmed naturally by the sun. From around June through September it sits at a really lovely temperature.",
+    text: "The pool isn't heated, but it's warmed naturally by the sun and from around June through September it sits at a really lovely temperature. There are also two hot tubs at the house, lovely for relaxing in the evenings.",
     topic_keys: ['pool_heated'],
   },
   {
@@ -106,14 +106,32 @@ const FRAGMENTS: FragmentRow[] = [
   {
     key: 'how_to_book',
     category: 'knowledge',
-    text: 'The quickest way to book is straight through the website at www.bontemaison.com. All cards accepted with secure 3D payment, and full confirmation details follow by email.',
+    text: 'The easiest way is to book directly online at www.bontemaison.com, just select Booking from the menu and the system will guide you through everything, including the 25% deposit to secure the dates. The balance is due 8 weeks before arrival. All major cards accepted, in £ or €. I am also very happy to handle the booking for you, or to jump on a quick call if that would help.',
     topic_keys: ['how_to_book'],
   },
   {
     key: 'deposit',
     category: 'knowledge',
-    text: 'Deposit and balance details are all set out on the website at www.bontemaison.com when you book. Everything is laid out clearly there, including what is due and when.',
+    text: 'A 25% deposit secures the dates, with the remaining balance due 8 weeks before arrival. We also take a £200 refundable security deposit, returned after the stay. Payments can be made in £ or €, all major cards accepted.',
     topic_keys: ['deposit'],
+  },
+  {
+    key: 'property_overview',
+    category: 'knowledge',
+    text: 'Bonté is a private luxury villa in the Dordogne, set in peaceful countryside close to Duras, Eymet and Bergerac and well placed for the Bordeaux wine region. It sleeps 10 across five bedrooms (two king-size and three twin), with an additional fold-out bed for an 11th child. The house is reserved exclusively for your group and includes a private pool, two hot tubs, large outdoor dining space, BBQ, pétanque court, fast WiFi, bedding, towels, pool towels, cleaning and a welcome pack on arrival.',
+    topic_keys: ['property_overview'],
+  },
+  {
+    key: 'bike_hire',
+    category: 'knowledge',
+    text: 'Yes, the area around Bonté is excellent for cycling, with quiet country roads and vineyard routes around Duras and Eymet. Local companies can arrange bike hire and in many cases deliver to the house or meet guests nearby. Happy to point you towards suitable local options before you arrive.',
+    topic_keys: ['bike_hire'],
+  },
+  {
+    key: 'air_conditioning',
+    category: 'knowledge',
+    text: "There isn't air conditioning at Bonté. The house is a traditional French property with thick stone walls and shutters that keep it comfortably cool, particularly when the shutters are used during the warmer parts of the day. There are also fans in the bedrooms, and most of the summer is naturally spent outside by the pool, on the terrace or in the evening shade.",
+    topic_keys: ['air_conditioning'],
   },
 
   // ── Nudges (gentle prompts toward booking) ───────────────────────────

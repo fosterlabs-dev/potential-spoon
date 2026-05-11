@@ -103,8 +103,13 @@ export class PricingService {
 
   private pickRule(rules: PricingRule[], checkIn: Date): PricingRule | undefined {
     const t = checkIn.getTime();
+    // End dates are exclusive: a check-in on a band's end_date belongs to the
+    // next band, not this one. Bands in Airtable are stored as adjacent ranges
+    // (each end_date == the next band's start_date), so without this the
+    // boundary day matches both and `narrowest` wins arbitrarily — e.g. 11 Jul
+    // 2027 was picking Summer (£3,995) instead of High Summer (£4,995).
     const matching = rules.filter(
-      (r) => r.startDate.getTime() <= t && r.endDate.getTime() >= t,
+      (r) => r.startDate.getTime() <= t && r.endDate.getTime() > t,
     );
     if (matching.length === 0) return undefined;
     return matching.reduce((narrowest, r) => {
