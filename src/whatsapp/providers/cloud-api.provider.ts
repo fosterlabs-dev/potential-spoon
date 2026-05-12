@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import axios, { AxiosError } from 'axios';
 import * as crypto from 'crypto';
 import { LoggerService } from '../../logger/logger.service';
-import { IncomingMessage, WhatsAppProvider } from './provider.interface';
+import { IncomingMessage, SendResult, WhatsAppProvider } from './provider.interface';
 
 const GRAPH_API_BASE = 'https://graph.facebook.com/v20.0';
 const RETRY_DELAY_MS = 500;
@@ -49,7 +49,7 @@ export class CloudApiProvider implements WhatsAppProvider {
     this.verifyToken = config.get<string>('WHATSAPP_VERIFY_TOKEN') ?? '';
   }
 
-  async sendMessage(to: string, text: string): Promise<void> {
+  async sendMessage(to: string, text: string): Promise<SendResult> {
     const payload = {
       messaging_product: 'whatsapp',
       to,
@@ -60,6 +60,7 @@ export class CloudApiProvider implements WhatsAppProvider {
       const res = await this.post(payload);
       const id = res.data?.messages?.[0]?.id;
       this.logger.info('whatsapp', 'sent message', { to, id });
+      return { id };
     } catch (err) {
       const ax = err as AxiosError<{ error?: { message?: string } }>;
       this.logger.error('whatsapp', 'send failed', {
@@ -75,7 +76,7 @@ export class CloudApiProvider implements WhatsAppProvider {
     to: string,
     templateName: string,
     vars: Record<string, string>,
-  ): Promise<void> {
+  ): Promise<SendResult> {
     const components = Object.keys(vars).length
       ? [
           {
@@ -98,6 +99,7 @@ export class CloudApiProvider implements WhatsAppProvider {
       const res = await this.post(payload);
       const id = res.data?.messages?.[0]?.id;
       this.logger.info('whatsapp', 'sent template', { to, templateName, id });
+      return { id };
     } catch (err) {
       const ax = err as AxiosError<{ error?: { message?: string } }>;
       this.logger.error('whatsapp', 'template send failed', {

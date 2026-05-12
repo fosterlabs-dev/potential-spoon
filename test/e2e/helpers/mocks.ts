@@ -243,11 +243,12 @@ export class FakeWhatsAppProvider implements WhatsAppProvider {
     this.sent = [];
   }
 
-  sendMessage = jest.fn(async (to: string, text: string): Promise<void> => {
+  sendMessage = jest.fn(async (to: string, text: string) => {
     this.sent.push({ to, text });
+    return {} as { id?: string };
   });
 
-  sendTemplate = jest.fn(async (): Promise<void> => undefined);
+  sendTemplate = jest.fn(async () => ({}) as { id?: string });
 
   parseWebhook(_payload: unknown): IncomingMessage | null {
     return null;

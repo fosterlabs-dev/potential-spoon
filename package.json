@@ -24,6 +24,7 @@
     "seed:pricing": "TS_NODE_COMPILER_OPTIONS='{\"module\":\"commonjs\"}' node --env-file=.env -r ts-node/register scripts/seed-pricing.ts",
     "trigger:follow-ups": "TS_NODE_COMPILER_OPTIONS='{\"module\":\"commonjs\"}' node --env-file=.env -r ts-node/register scripts/trigger-follow-ups.ts",
     "trigger:holds": "TS_NODE_COMPILER_OPTIONS='{\"module\":\"commonjs\"}' node --env-file=.env -r ts-node/register scripts/trigger-holds.ts",
+    "owner:cmd": "TS_NODE_COMPILER_OPTIONS='{\"module\":\"commonjs\"}' node --env-file=.env -r ts-node/register scripts/send-owner-command.ts",
     "test:feedback": "TS_NODE_COMPILER_OPTIONS='{\"module\":\"commonjs\"}' node --env-file=.env -r ts-node/register scripts/run-feedback-test.ts"
   },
   "dependencies": {

@@ -88,6 +88,30 @@ export class WebhookController {
 
     const message = this.whatsapp.parseWebhook(body);
     if (!message) {
+      const echo = this.whatsapp.parseOutboundEcho(body);
+      if (echo) {
+        if (echo.id && this.whatsapp.wasRecentlySentByBot(echo.id)) {
+          this.logger.debug('whatsapp', 'echo is bot-originated; ignoring', {
+            to: echo.to,
+            id: echo.id,
+          });
+          return { status: 'ok' };
+        }
+        if (echo.id && this.isDuplicate(echo.id)) {
+          return { status: 'ok' };
+        }
+        this.logger.info('whatsapp', 'detected owner reply in customer thread', {
+          to: echo.to,
+          id: echo.id,
+        });
+        void this.handler.handleOwnerTakeover(echo.to).catch((err: Error) => {
+          this.logger.error('whatsapp', 'takeover handler threw; swallowed', {
+            to: echo.to,
+            error: err.message,
+          });
+        });
+        return { status: 'ok' };
+      }
       this.logger.debug('whatsapp', 'webhook ignored: no parseable message', { body });
       return { status: 'ok' };
     }

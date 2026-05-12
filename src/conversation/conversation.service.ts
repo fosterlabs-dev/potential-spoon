@@ -65,6 +65,14 @@ type ConversationFields = {
   notes?: string;
 };
 
+type BookingRulesFields = {
+  key?: string;
+  value?: string;
+  active?: boolean;
+};
+
+const GLOBAL_PAUSE_KEY = 'bot_paused_global';
+
 const COMMAND_NAMES = ['release', 'pause', 'resume', 'status'] as const;
 type CommandName = (typeof COMMAND_NAMES)[number];
 
@@ -145,7 +153,54 @@ export class ConversationService {
   }
 
   async canSendBot(phone: string): Promise<boolean> {
+    if (await this.getGlobalPaused()) return false;
     return (await this.getStatus(phone)) === 'bot';
+  }
+
+  async getGlobalPaused(): Promise<boolean> {
+    try {
+      const row = await this.findGlobalPauseRow();
+      return this.parseGlobalPauseValue(row?.fields.value);
+    } catch (err) {
+      this.logger.warn('conversation', 'global pause read failed; assuming OFF', {
+        error: (err as Error).message,
+      });
+      return false;
+    }
+  }
+
+  async setGlobalPaused(paused: boolean): Promise<void> {
+    const row = await this.findGlobalPauseRow();
+    const fields: BookingRulesFields = {
+      key: GLOBAL_PAUSE_KEY,
+      value: paused ? 'true' : 'false',
+      active: true,
+    };
+    if (row) {
+      await this.airtable.update<BookingRulesFields>(
+        'BookingRules',
+        row.id,
+        fields,
+      );
+    } else {
+      await this.airtable.create<BookingRulesFields>('BookingRules', fields);
+    }
+    this.logger.info('conversation', 'global pause updated', { paused });
+  }
+
+  async statusCounts(): Promise<{ bot: number; human: number; paused: number }> {
+    const rows = await this.airtable.list<ConversationFields>('Conversations', {});
+    const counts = { bot: 0, human: 0, paused: 0 };
+    const now = Date.now();
+    for (const row of rows) {
+      const f = row.fields;
+      let s: ConversationStatus = f.pause_status ?? 'bot';
+      if (s === 'paused' && f.pause_until && new Date(f.pause_until).getTime() < now) {
+        s = 'bot';
+      }
+      counts[s]++;
+    }
+    return counts;
   }
 
   async setStatus(
@@ -317,5 +372,22 @@ export class ConversationService {
       maxRecords: 1,
     });
     return rows[0];
+  }
+
+  private async findGlobalPauseRow() {
+    const rows = await this.airtable.list<BookingRulesFields>('BookingRules', {
+      filterByFormula: `{key}='${GLOBAL_PAUSE_KEY}'`,
+      maxRecords: 1,
+    });
+    return rows[0];
+  }
+
+  private parseGlobalPauseValue(value: unknown): boolean {
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'string') {
+      const v = value.trim().toLowerCase();
+      return v === 'true' || v === '1' || v === 'yes';
+    }
+    return false;
   }
 }

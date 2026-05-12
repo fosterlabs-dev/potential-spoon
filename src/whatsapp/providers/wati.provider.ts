@@ -2,7 +2,12 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios, { AxiosError } from 'axios';
 import { LoggerService } from '../../logger/logger.service';
-import { IncomingMessage, WhatsAppProvider } from './provider.interface';
+import {
+  IncomingMessage,
+  OutboundEcho,
+  SendResult,
+  WhatsAppProvider,
+} from './provider.interface';
 
 // Wati webhook body shape (inbound message event)
 type WatiWebhookPayload = {
@@ -36,7 +41,7 @@ export class WatiProvider implements WhatsAppProvider {
     this.accessToken = token;
   }
 
-  async sendMessage(to: string, text: string): Promise<void> {
+  async sendMessage(to: string, text: string): Promise<SendResult> {
     try {
       const res = await axios.post(
         `${this.baseUrl}/sendSessionMessage/${to}`,
@@ -46,7 +51,9 @@ export class WatiProvider implements WhatsAppProvider {
           headers: { Authorization: `Bearer ${this.accessToken}` },
         },
       );
-      this.logger.info('whatsapp', 'sent message via wati', { to, id: res.data?.id });
+      const id = this.extractMessageId(res.data);
+      this.logger.info('whatsapp', 'sent message via wati', { to, id });
+      return { id };
     } catch (err) {
       const ax = err as AxiosError;
       this.logger.error('whatsapp', 'wati send failed', {
@@ -64,10 +71,10 @@ export class WatiProvider implements WhatsAppProvider {
     to: string,
     templateName: string,
     vars: Record<string, string>,
-  ): Promise<void> {
+  ): Promise<SendResult> {
     const parameters = Object.entries(vars).map(([name, value]) => ({ name, value }));
     try {
-      await axios.post(
+      const res = await axios.post(
         `${this.baseUrl}/sendTemplateMessage`,
         {
           whatsappNumber: to,
@@ -77,7 +84,13 @@ export class WatiProvider implements WhatsAppProvider {
         },
         { headers: { Authorization: `Bearer ${this.accessToken}` } },
       );
-      this.logger.info('whatsapp', 'sent template via wati', { to, templateName });
+      const id = this.extractMessageId(res.data);
+      this.logger.info('whatsapp', 'sent template via wati', {
+        to,
+        templateName,
+        id,
+      });
+      return { id };
     } catch (err) {
       const ax = err as AxiosError;
       this.logger.error('whatsapp', 'wati template send failed', {
@@ -90,6 +103,14 @@ export class WatiProvider implements WhatsAppProvider {
       });
       throw err;
     }
+  }
+
+  private extractMessageId(data: unknown): string | undefined {
+    if (!data || typeof data !== 'object') return undefined;
+    const obj = data as Record<string, unknown>;
+    if (typeof obj.id === 'string') return obj.id;
+    if (typeof obj.messageId === 'string') return obj.messageId;
+    return undefined;
   }
 
   parseWebhook(payload: unknown): IncomingMessage | null {
@@ -109,6 +130,24 @@ export class WatiProvider implements WhatsAppProvider {
 
     const profileName = body.senderName?.trim() || undefined;
     return { from: body.waId, text: body.text, id: body.id, profileName };
+  }
+
+  parseOutboundEcho(payload: unknown): OutboundEcho | null {
+    const body = payload as WatiWebhookPayload;
+    if (body.owner !== true) return null;
+    if (body.type !== 'text' || !body.waId || !body.text) return null;
+
+    const createdMs = this.messageCreatedMs(body);
+    if (createdMs !== null && Date.now() - createdMs > MAX_MESSAGE_AGE_MS) {
+      this.logger.warn('whatsapp', 'dropping stale wati echo webhook (likely replay)', {
+        waId: body.waId,
+        id: body.id,
+        ageMs: Date.now() - createdMs,
+      });
+      return null;
+    }
+
+    return { to: body.waId, text: body.text, id: body.id };
   }
 
   private messageCreatedMs(body: WatiWebhookPayload): number | null {

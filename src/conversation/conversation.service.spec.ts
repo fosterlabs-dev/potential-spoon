@@ -175,6 +175,89 @@ describe('ConversationService.canSendBot', () => {
       ),
     ).toBe(false);
   });
+
+  it('blocks sends when global pause is on, regardless of per-conv status', async () => {
+    const airtable = makeAirtable({
+      list: jest.fn().mockImplementation((table: string) => {
+        if (table === 'BookingRules') {
+          return Promise.resolve([
+            {
+              id: 'r-global',
+              fields: { key: 'bot_paused_global', value: 'true', active: true },
+            },
+          ]);
+        }
+        // Conversations table — say the conversation is in bot mode
+        return Promise.resolve([
+          { id: 'r1', fields: { phone: '62812', pause_status: 'bot' } },
+        ]);
+      }),
+    });
+    const service = new ConversationService(airtable, makeLogger());
+
+    expect(await service.canSendBot('62812')).toBe(false);
+  });
+});
+
+describe('ConversationService global pause', () => {
+  it('returns false when no BookingRules row exists', async () => {
+    const airtable = makeAirtable();
+    const service = new ConversationService(airtable, makeLogger());
+    expect(await service.getGlobalPaused()).toBe(false);
+  });
+
+  it('returns true when value is "true"', async () => {
+    const airtable = makeAirtable({
+      list: jest.fn().mockResolvedValue([
+        { id: 'r', fields: { key: 'bot_paused_global', value: 'true' } },
+      ]),
+    });
+    const service = new ConversationService(airtable, makeLogger());
+    expect(await service.getGlobalPaused()).toBe(true);
+  });
+
+  it('returns false on Airtable read failure', async () => {
+    const logger = makeLogger();
+    const airtable = makeAirtable({
+      list: jest.fn().mockRejectedValue(new Error('boom')),
+    });
+    const service = new ConversationService(airtable, logger);
+    expect(await service.getGlobalPaused()).toBe(false);
+    expect(logger.warn).toHaveBeenCalled();
+  });
+
+  it('creates a BookingRules row when one does not exist', async () => {
+    const airtable = makeAirtable();
+    const service = new ConversationService(airtable, makeLogger());
+
+    await service.setGlobalPaused(true);
+
+    expect(airtable.create).toHaveBeenCalledWith(
+      'BookingRules',
+      expect.objectContaining({
+        key: 'bot_paused_global',
+        value: 'true',
+        active: true,
+      }),
+    );
+  });
+
+  it('updates the existing BookingRules row', async () => {
+    const airtable = makeAirtable({
+      list: jest.fn().mockResolvedValue([
+        { id: 'rec-gp', fields: { key: 'bot_paused_global', value: 'true' } },
+      ]),
+    });
+    const service = new ConversationService(airtable, makeLogger());
+
+    await service.setGlobalPaused(false);
+
+    expect(airtable.update).toHaveBeenCalledWith(
+      'BookingRules',
+      'rec-gp',
+      expect.objectContaining({ value: 'false' }),
+    );
+  });
 });
 
 describe('ConversationService.setStatus', () => {

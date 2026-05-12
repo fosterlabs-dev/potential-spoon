@@ -4,9 +4,10 @@ import { WhatsAppProvider } from './providers/provider.interface';
 import { WhatsappService } from './whatsapp.service';
 
 const makeProvider = (): jest.Mocked<WhatsAppProvider> => ({
-  sendMessage: jest.fn().mockResolvedValue(undefined),
-  sendTemplate: jest.fn().mockResolvedValue(undefined),
+  sendMessage: jest.fn().mockResolvedValue({}),
+  sendTemplate: jest.fn().mockResolvedValue({}),
   parseWebhook: jest.fn().mockReturnValue(null),
+  parseOutboundEcho: jest.fn().mockReturnValue(null),
   validateWebhookSignature: jest.fn().mockReturnValue(true),
   verifyWebhook: jest.fn().mockReturnValue('challenge'),
   assignToHuman: jest.fn().mockResolvedValue(undefined),
@@ -101,6 +102,47 @@ describe('WhatsappService', () => {
       const msg = { from: '628', text: 'hi', id: '1' };
       provider.parseWebhook.mockReturnValue(msg);
       expect(makeService(provider).parseWebhook({ raw: true })).toBe(msg);
+    });
+  });
+
+  describe('parseOutboundEcho', () => {
+    it('delegates to the provider when supported', () => {
+      const provider = makeProvider();
+      const echo = { to: '628', text: 'hi', id: 'e1' };
+      (provider.parseOutboundEcho as jest.Mock).mockReturnValue(echo);
+      expect(makeService(provider).parseOutboundEcho({})).toBe(echo);
+    });
+
+    it('returns null when the provider does not support echoes', () => {
+      const provider = makeProvider();
+      delete (provider as Partial<typeof provider>).parseOutboundEcho;
+      expect(makeService(provider).parseOutboundEcho({})).toBeNull();
+    });
+  });
+
+  describe('wasRecentlySentByBot', () => {
+    it('returns true for an id the bot just sent', async () => {
+      const provider = makeProvider();
+      provider.sendMessage.mockResolvedValue({ id: 'msg-1' });
+      const service = makeService(provider);
+
+      await service.sendMessage('628', 'hi');
+
+      expect(service.wasRecentlySentByBot('msg-1')).toBe(true);
+    });
+
+    it('returns false for an unknown id', () => {
+      expect(makeService(makeProvider()).wasRecentlySentByBot('nope')).toBe(false);
+    });
+
+    it('tracks ids from sendTemplate too', async () => {
+      const provider = makeProvider();
+      provider.sendTemplate.mockResolvedValue({ id: 'tmpl-1' });
+      const service = makeService(provider);
+
+      await service.sendTemplate('628', 'k', {});
+
+      expect(service.wasRecentlySentByBot('tmpl-1')).toBe(true);
     });
   });
 

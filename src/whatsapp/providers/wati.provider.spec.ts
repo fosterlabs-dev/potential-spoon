@@ -114,9 +114,58 @@ describe('WatiProvider', () => {
       expect(provider.parseWebhook({ waId: '628', type: 'image' })).toBeNull();
     });
 
+    it('returns null for owner-sent (echo) events', () => {
+      const provider = new WatiProvider(makeConfig(), makeLogger());
+      expect(
+        provider.parseWebhook({
+          waId: '628',
+          type: 'text',
+          text: 'hi',
+          owner: true,
+        }),
+      ).toBeNull();
+    });
+
     it('returns null for unrecognised payload shape', () => {
       const provider = new WatiProvider(makeConfig(), makeLogger());
       expect(provider.parseWebhook({})).toBeNull();
+    });
+  });
+
+  describe('parseOutboundEcho', () => {
+    it('returns an echo for an owner-sent text event', () => {
+      const provider = new WatiProvider(makeConfig(), makeLogger());
+      const payload = {
+        waId: '628123456789',
+        text: 'hi, calling you in 5',
+        id: 'echo-1',
+        type: 'text',
+        owner: true,
+      };
+
+      expect(provider.parseOutboundEcho(payload)).toEqual({
+        to: '628123456789',
+        text: 'hi, calling you in 5',
+        id: 'echo-1',
+      });
+    });
+
+    it('returns null when the event is from the customer (owner=false)', () => {
+      const provider = new WatiProvider(makeConfig(), makeLogger());
+      expect(
+        provider.parseOutboundEcho({
+          waId: '628',
+          type: 'text',
+          text: 'hi',
+        }),
+      ).toBeNull();
+    });
+
+    it('returns null for non-text echo events', () => {
+      const provider = new WatiProvider(makeConfig(), makeLogger());
+      expect(
+        provider.parseOutboundEcho({ waId: '628', type: 'image', owner: true }),
+      ).toBeNull();
     });
   });
 

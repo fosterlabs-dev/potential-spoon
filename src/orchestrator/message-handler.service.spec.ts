@@ -133,6 +133,11 @@ const makeConversation = (
     }),
     updateContext: jest.fn().mockResolvedValue(undefined),
     recordQuote: jest.fn().mockResolvedValue(undefined),
+    getGlobalPaused: jest.fn().mockResolvedValue(false),
+    setGlobalPaused: jest.fn().mockResolvedValue(undefined),
+    statusCounts: jest
+      .fn()
+      .mockResolvedValue({ bot: 0, human: 0, paused: 0 }),
     ...overrides,
   }) as unknown as ConversationService;
 
@@ -262,35 +267,160 @@ describe('MessageHandlerService.handle — inbound logging', () => {
 });
 
 describe('MessageHandlerService.handle — owner commands', () => {
-  it('pauses the owner conversation on /pause 30', async () => {
+  it('toggles global pause ON for /pause with no phone', async () => {
     const conversation = makeConversation({
-      parseCommand: jest
-        .fn()
-        .mockReturnValue({ command: 'pause', minutes: 30 }),
+      parseCommand: jest.fn().mockReturnValue({ command: 'pause' }),
+      setGlobalPaused: jest.fn().mockResolvedValue(undefined),
     });
     const notifications = makeNotifications();
     const handler = build({ conversation, notifications });
 
-    await handler.handle({ from: OWNER, text: '/pause 30' });
+    await handler.handle({ from: OWNER, text: '/pause' });
 
-    expect(conversation.setStatus).toHaveBeenCalledWith(OWNER, 'paused', {
+    expect(conversation.setGlobalPaused).toHaveBeenCalledWith(true);
+    expect(conversation.setStatus).not.toHaveBeenCalled();
+    expect(notifications.notifyOwner).toHaveBeenCalledWith(
+      expect.stringContaining('Bot paused'),
+      expect.objectContaining({ reason: 'owner_command' }),
+    );
+  });
+
+  it('pauses a single conversation for /pause +phone', async () => {
+    const conversation = makeConversation({
+      parseCommand: jest
+        .fn()
+        .mockReturnValue({ command: 'pause', phone: '628777', minutes: 30 }),
+      setGlobalPaused: jest.fn().mockResolvedValue(undefined),
+    });
+    const notifications = makeNotifications();
+    const handler = build({ conversation, notifications });
+
+    await handler.handle({ from: OWNER, text: '/pause 628777 30' });
+
+    expect(conversation.setStatus).toHaveBeenCalledWith('628777', 'paused', {
       pauseForMinutes: 30,
     });
+    expect(conversation.setGlobalPaused).not.toHaveBeenCalled();
     expect(notifications.notifyOwner).toHaveBeenCalledWith(
-      expect.stringContaining('paused'),
+      expect.stringContaining('Paused +628777 for 30 minutes'),
       expect.objectContaining({ reason: 'owner_command' }),
+    );
+  });
+
+  it('toggles global pause OFF for /resume with no phone', async () => {
+    const conversation = makeConversation({
+      parseCommand: jest.fn().mockReturnValue({ command: 'resume' }),
+      setGlobalPaused: jest.fn().mockResolvedValue(undefined),
+    });
+    const notifications = makeNotifications();
+    const handler = build({ conversation, notifications });
+
+    await handler.handle({ from: OWNER, text: '/resume' });
+
+    expect(conversation.setGlobalPaused).toHaveBeenCalledWith(false);
+    expect(notifications.notifyOwner).toHaveBeenCalledWith(
+      expect.stringContaining('Bot back on'),
+      expect.objectContaining({ reason: 'owner_command' }),
+    );
+  });
+
+  it('reports global state and counts for /status with no phone', async () => {
+    const conversation = makeConversation({
+      parseCommand: jest.fn().mockReturnValue({ command: 'status' }),
+      getGlobalPaused: jest.fn().mockResolvedValue(true),
+      statusCounts: jest
+        .fn()
+        .mockResolvedValue({ bot: 3, human: 1, paused: 2 }),
+    });
+    const notifications = makeNotifications();
+    const handler = build({ conversation, notifications });
+
+    await handler.handle({ from: OWNER, text: '/status' });
+
+    const message = (notifications.notifyOwner as jest.Mock).mock.calls[0][0];
+    expect(message).toContain('Bot is paused');
+    expect(message).toContain('3 waiting');
+    expect(message).toContain('1 with you');
+    expect(message).toContain('2 paused');
+  });
+
+  it('translates internal intent labels in /status +phone', async () => {
+    const conversation = makeConversation({
+      parseCommand: jest
+        .fn()
+        .mockReturnValue({ command: 'status', phone: '628777' }),
+      getState: jest.fn().mockResolvedValue({
+        status: 'human',
+        lifecycleStatus: 'Responded',
+        lastIntent: 'general_info',
+        pendingDates: null,
+        customerName: 'Maria',
+      }),
+    });
+    const notifications = makeNotifications();
+    const handler = build({ conversation, notifications });
+
+    await handler.handle({ from: OWNER, text: '/status 628777' });
+
+    const message = (notifications.notifyOwner as jest.Mock).mock.calls[0][0];
+    expect(message).toContain('+628777');
+    expect(message).toContain('with you');
+    expect(message).toContain('Name: Maria');
+    expect(message).toContain('Last topic: general question');
+    expect(message).not.toContain('general_info');
+  });
+
+  it('rejects /release with no phone argument', async () => {
+    const conversation = makeConversation({
+      parseCommand: jest.fn().mockReturnValue({ command: 'release' }),
+    });
+    const notifications = makeNotifications();
+    const handler = build({ conversation, notifications });
+
+    await handler.handle({ from: OWNER, text: '/release' });
+
+    expect(conversation.setStatus).not.toHaveBeenCalled();
+    expect(notifications.notifyOwner).toHaveBeenCalledWith(
+      expect.stringContaining('needs a phone number'),
+      expect.any(Object),
     );
   });
 
   it('ignores commands from anyone other than the owner', async () => {
     const conversation = makeConversation({
       parseCommand: jest.fn().mockReturnValue({ command: 'pause' }),
+      setGlobalPaused: jest.fn().mockResolvedValue(undefined),
     });
     const handler = build({ conversation });
 
     await handler.handle({ from: '628111', text: '/pause' });
 
     expect(conversation.setStatus).not.toHaveBeenCalled();
+    expect(conversation.setGlobalPaused).not.toHaveBeenCalled();
+  });
+});
+
+describe('MessageHandlerService.handleOwnerTakeover', () => {
+  it('marks the conversation as human and cancels any follow-ups', async () => {
+    const conversation = makeConversation();
+    const followUps = makeFollowUps();
+    const handler = build({ conversation, followUps });
+
+    await handler.handleOwnerTakeover(CUSTOMER);
+
+    expect(conversation.setStatus).toHaveBeenCalledWith(CUSTOMER, 'human');
+    expect(followUps.cancel).toHaveBeenCalledWith(CUSTOMER);
+  });
+
+  it('ignores echoes addressed to the owner phone (Jim messaging himself)', async () => {
+    const conversation = makeConversation();
+    const followUps = makeFollowUps();
+    const handler = build({ conversation, followUps });
+
+    await handler.handleOwnerTakeover(OWNER);
+
+    expect(conversation.setStatus).not.toHaveBeenCalled();
+    expect(followUps.cancel).not.toHaveBeenCalled();
   });
 });
 

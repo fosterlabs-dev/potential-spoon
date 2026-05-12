@@ -75,6 +75,32 @@ export class MessageHandlerService {
       config.get<string>('INSTANT_BOOK_ENABLED') === 'true';
   }
 
+  async handleOwnerTakeover(phone: string): Promise<void> {
+    if (phone === this.ownerPhone) return; // owner messaging themselves — ignore
+
+    this.logger.info('conversation', 'human takeover detected — pausing bot for conversation', {
+      phone,
+    });
+
+    try {
+      await this.conversation.setStatus(phone, 'human');
+    } catch (err) {
+      this.logger.error('conversation', 'takeover setStatus failed', {
+        phone,
+        error: (err as Error).message,
+      });
+    }
+
+    try {
+      await this.followUps.cancel(phone);
+    } catch (err) {
+      this.logger.warn('follow-ups', 'cancel on takeover failed', {
+        phone,
+        error: (err as Error).message,
+      });
+    }
+  }
+
   async handle(msg: IncomingMessage): Promise<void> {
     await this.messageLog.log(msg.from, 'in', msg.text);
 
@@ -778,43 +804,145 @@ export class MessageHandlerService {
 
   private async runOwnerCommand(cmd: ParsedCommand): Promise<void> {
     if (!this.ownerPhone) return;
-    const target = cmd.phone ?? this.ownerPhone;
 
     if (cmd.command === 'pause') {
-      await this.conversation.setStatus(
-        target,
-        'paused',
-        cmd.minutes ? { pauseForMinutes: cmd.minutes } : {},
-      );
+      if (cmd.phone) {
+        await this.conversation.setStatus(
+          cmd.phone,
+          'paused',
+          cmd.minutes ? { pauseForMinutes: cmd.minutes } : {},
+        );
+        const who = this.formatPhone(cmd.phone);
+        const body = cmd.minutes
+          ? `Paused ${who} for ${cmd.minutes} minute${cmd.minutes === 1 ? '' : 's'}.\nBot will pick it back up automatically after that.`
+          : `Paused ${who}.\nBot won't reply on this conversation until you /resume ${who}.`;
+        await this.notifications.notifyOwner(body, {
+          reason: 'owner_command',
+          extra: { command: 'pause', target: cmd.phone },
+        });
+        return;
+      }
+      await this.conversation.setGlobalPaused(true);
       await this.notifications.notifyOwner(
-        cmd.minutes
-          ? `paused ${target} for ${cmd.minutes} min`
-          : `paused ${target}`,
-        { reason: 'owner_command', extra: { command: 'pause', target } },
+        "Bot paused.\nNo conversations will get a reply until you send /resume.",
+        { reason: 'owner_command', extra: { command: 'pause', scope: 'global' } },
       );
       return;
     }
+
+    if (cmd.command === 'resume') {
+      if (cmd.phone) {
+        await this.conversation.setStatus(cmd.phone, 'bot');
+        const who = this.formatPhone(cmd.phone);
+        await this.notifications.notifyOwner(
+          `Resumed ${who}.\nBot is replying on this conversation again.`,
+          {
+            reason: 'owner_command',
+            extra: { command: 'resume', target: cmd.phone },
+          },
+        );
+        return;
+      }
+      await this.conversation.setGlobalPaused(false);
+      await this.notifications.notifyOwner(
+        "Bot back on.\nReplying to conversations again.",
+        {
+          reason: 'owner_command',
+          extra: { command: 'resume', scope: 'global' },
+        },
+      );
+      return;
+    }
+
     if (cmd.command === 'release') {
-      await this.conversation.setStatus(target, 'human');
-      await this.notifications.notifyOwner(`${target} released to human`, {
+      if (!cmd.phone) {
+        await this.notifications.notifyOwner(
+          "/release needs a phone number.\nExample: /release 447712345678",
+          { reason: 'owner_command', extra: { command: 'release' } },
+        );
+        return;
+      }
+      await this.conversation.setStatus(cmd.phone, 'human');
+      const who = this.formatPhone(cmd.phone);
+      await this.notifications.notifyOwner(
+        `${who} is yours now.\nBot will stay quiet — you're handling this one.`,
+        {
+          reason: 'owner_command',
+          extra: { command: 'release', target: cmd.phone },
+        },
+      );
+      return;
+    }
+
+    if (cmd.command === 'status') {
+      if (cmd.phone) {
+        const state = await this.conversation.getState(cmd.phone);
+        const who = this.formatPhone(cmd.phone);
+        const statusLabel = this.formatConversationStatus(state.status);
+        const lines: string[] = [`${who} — ${statusLabel}`];
+        if (state.customerName) lines.push(`Name: ${state.customerName}`);
+        if (state.lastIntent) {
+          lines.push(`Last topic: ${this.formatIntent(state.lastIntent)}`);
+        }
+        await this.notifications.notifyOwner(lines.join('\n'), {
+          reason: 'owner_command',
+          extra: { command: 'status', target: cmd.phone },
+        });
+        return;
+      }
+      const [globalPaused, counts] = await Promise.all([
+        this.conversation.getGlobalPaused(),
+        this.conversation.statusCounts().catch(() => null),
+      ]);
+      const header = globalPaused ? 'Bot is paused.' : 'Bot is active.';
+      const lines: string[] = [header];
+      if (counts) {
+        const items: string[] = [];
+        if (counts.bot > 0) {
+          items.push(
+            `• ${counts.bot} ${globalPaused ? 'waiting' : 'on the bot'}`,
+          );
+        }
+        if (counts.human > 0) items.push(`• ${counts.human} with you`);
+        if (counts.paused > 0) items.push(`• ${counts.paused} paused`);
+        if (items.length === 0) items.push('• No active conversations.');
+        lines.push('', ...items);
+      }
+      await this.notifications.notifyOwner(lines.join('\n'), {
         reason: 'owner_command',
-        extra: { command: 'release', target },
+        extra: { command: 'status', scope: 'global' },
       });
       return;
     }
-    if (cmd.command === 'status') {
-      const state = await this.conversation.getState(target);
-      await this.notifications.notifyOwner(
-        `${target}: ${state.status}${state.lastIntent ? ` (last: ${state.lastIntent})` : ''}`,
-        { reason: 'owner_command', extra: { command: 'status', target } },
-      );
-      return;
-    }
-    await this.conversation.setStatus(target, 'bot');
-    await this.notifications.notifyOwner(`${target} bot resumed`, {
-      reason: 'owner_command',
-      extra: { command: 'resume', target },
-    });
+  }
+
+  private formatPhone(phone: string): string {
+    return phone.startsWith('+') ? phone : `+${phone}`;
+  }
+
+  private formatConversationStatus(s: 'bot' | 'human' | 'paused'): string {
+    if (s === 'bot') return 'bot is replying';
+    if (s === 'human') return 'with you';
+    return 'paused';
+  }
+
+  private formatIntent(intent: string): string {
+    const map: Record<string, string> = {
+      availability_inquiry: 'availability question',
+      pricing_inquiry: 'pricing question',
+      greeting: 'greeting',
+      general_info: 'general question',
+      booking_confirmation: 'booking confirmation',
+      hold_request: 'hold request',
+      discount_request: 'discount request',
+      human_request: 'asked to speak with you',
+      complaint_or_frustration: 'complaint',
+      off_topic_or_unclear: 'unclear / off-topic',
+      acknowledgment: 'thanks / acknowledgement',
+      polite_close: 'winding down',
+      correction: 'correction',
+    };
+    return map[intent] ?? intent.replace(/_/g, ' ');
   }
 
   private async sendTemplate(

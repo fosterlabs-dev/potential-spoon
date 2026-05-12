@@ -249,9 +249,42 @@ Property-fact FAQs. Bot answers directly (no handoff) when parser classifies `ge
 
 ### `BookingRules` 🔴
 Simple key-value config for rules that change:
-- `key` (e.g. `year_2026_fully_booked`)
+- `key` (e.g. `year_2026_fully_booked`, `bot_paused_global`)
 - `value`
 - `active`
+
+`bot_paused_global` (value `"true"` / `"false"`) is the global kill-switch.
+When `"true"`, `ConversationService.canSendBot` returns false for every phone,
+so no template is sent and no composer reply is dispatched. Inbound messages
+are still logged. Toggled via `/pause` and `/resume` from `OWNER_PHONE` (no
+argument), or by editing the row directly in Airtable.
+
+### Owner commands
+Sent from `OWNER_PHONE` to the business number. Messages from any other
+number are ignored. All commands route through `MessageHandlerService.runOwnerCommand`.
+
+- `/pause` — global pause ON (writes BookingRules.bot_paused_global = true).
+- `/pause <phone> [minutes]` — pause one conversation (optionally with TTL).
+- `/resume` — global pause OFF.
+- `/resume <phone>` — un-pause one conversation (sets pause_status back to bot).
+- `/release <phone>` — mark one conversation as `human` (handed over to Jim).
+  Requires a phone argument.
+- `/status` — global state + counts of conversations in each pause_status.
+- `/status <phone>` — per-conversation state.
+
+### Human takeover (WhatsApp coexistence)
+When Jim replies in a customer thread from the business number's WhatsApp app
+(coexistence mode), WATI surfaces it as an `owner=true` webhook. The flow:
+
+1. `WatiProvider.parseOutboundEcho` recognises the echo (separate from
+   `parseWebhook` which still returns null for owner events).
+2. `WebhookController` looks up the message id in `WhatsappService.wasRecentlySentByBot`.
+   - Hit → the bot itself sent this; ignore.
+   - Miss → it's Jim replying directly. Call
+     `MessageHandlerService.handleOwnerTakeover(echo.to)` to set the
+     conversation's `pause_status = human` and cancel any scheduled follow-ups.
+3. The CloudAPI provider does not implement `parseOutboundEcho` — this flow is
+   WATI-specific.
 
 ---
 

@@ -6,7 +6,10 @@ import { WhatsappService } from './whatsapp.service';
 import { WebhookController } from './webhook.controller';
 
 const makeHandler = (): MessageHandlerService =>
-  ({ handle: jest.fn().mockResolvedValue(undefined) }) as unknown as MessageHandlerService;
+  ({
+    handle: jest.fn().mockResolvedValue(undefined),
+    handleOwnerTakeover: jest.fn().mockResolvedValue(undefined),
+  }) as unknown as MessageHandlerService;
 
 const makeLogger = (): LoggerService =>
   ({
@@ -21,12 +24,16 @@ const makeWhatsapp = (
     verifyWebhook: (mode: string, token: string, challenge: string) => string;
     validateWebhookSignature: () => boolean;
     parseWebhook: (p: unknown) => { from: string; text: string; id?: string } | null;
+    parseOutboundEcho: (p: unknown) => { to: string; text: string; id?: string } | null;
+    wasRecentlySentByBot: (id: string) => boolean;
   }> = {},
 ): WhatsappService =>
   ({
     verifyWebhook: overrides.verifyWebhook ?? ((_m, _t, c) => c),
     validateWebhookSignature: overrides.validateWebhookSignature ?? (() => true),
     parseWebhook: overrides.parseWebhook ?? (() => null),
+    parseOutboundEcho: overrides.parseOutboundEcho ?? (() => null),
+    wasRecentlySentByBot: overrides.wasRecentlySentByBot ?? (() => false),
   }) as unknown as WhatsappService;
 
 const asReq = (raw?: Buffer): Request => ({ rawBody: raw } as unknown as Request);
@@ -115,6 +122,39 @@ describe('WebhookController (incoming POST)', () => {
     const out = await ctrl.receive(asReq(raw), 'sha256=x', undefined, {});
 
     expect(out).toEqual({ status: 'ok' });
+    expect(handler.handle).not.toHaveBeenCalled();
+  });
+
+  it('dispatches a takeover when the echo is not bot-originated', async () => {
+    const raw = Buffer.from('{}');
+    const handler = makeHandler();
+    const whatsapp = makeWhatsapp({
+      parseWebhook: () => null,
+      parseOutboundEcho: () => ({ to: '628777', text: 'hi', id: 'echo-1' }),
+      wasRecentlySentByBot: () => false,
+    });
+    const ctrl = new WebhookController(makeLogger(), handler, whatsapp);
+
+    const out = await ctrl.receive(asReq(raw), undefined, 'wati-token', {});
+
+    expect(out).toEqual({ status: 'ok' });
+    expect(handler.handleOwnerTakeover).toHaveBeenCalledWith('628777');
+    expect(handler.handle).not.toHaveBeenCalled();
+  });
+
+  it('ignores echo when the bot itself sent the message', async () => {
+    const raw = Buffer.from('{}');
+    const handler = makeHandler();
+    const whatsapp = makeWhatsapp({
+      parseWebhook: () => null,
+      parseOutboundEcho: () => ({ to: '628777', text: 'hi', id: 'echo-1' }),
+      wasRecentlySentByBot: (id: string) => id === 'echo-1',
+    });
+    const ctrl = new WebhookController(makeLogger(), handler, whatsapp);
+
+    await ctrl.receive(asReq(raw), undefined, 'wati-token', {});
+
+    expect(handler.handleOwnerTakeover).not.toHaveBeenCalled();
     expect(handler.handle).not.toHaveBeenCalled();
   });
 

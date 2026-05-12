@@ -178,6 +178,7 @@ export async function buildHarness(
   provider.sendMessage.mockImplementation(async (to: string, text: string) => {
     recorder.push({ kind: 'out', to, text });
     if (origSendImpl) await origSendImpl(to, text);
+    return {} as { id?: string };
   });
 
   return {
