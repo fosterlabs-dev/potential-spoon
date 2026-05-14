@@ -38,7 +38,9 @@ export class WatiProvider implements WhatsAppProvider {
       throw new Error('WATI_API_URL and WATI_ACCESS_TOKEN must be set');
     }
     this.baseUrl = baseUrl;
-    this.accessToken = token;
+    // Accept either "eyJ..." or "Bearer eyJ..." — we add the prefix ourselves
+    // when building the Authorization header, so strip it here if present.
+    this.accessToken = token.replace(/^Bearer\s+/i, '').trim();
   }
 
   async sendMessage(to: string, text: string): Promise<SendResult> {
