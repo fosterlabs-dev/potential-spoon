@@ -57,6 +57,35 @@ describe('WatiProvider', () => {
       );
     });
 
+    it('returns the wamid from the nested message.whatsappMessageId in the response', async () => {
+      // Real WATI response shape from /sendSessionMessage.
+      mockedAxios.post.mockResolvedValue({
+        data: {
+          ok: true,
+          result: 'success',
+          message: {
+            whatsappMessageId: 'wamid.NESTED',
+            id: 'wati-internal-1',
+            text: 'hi',
+          },
+        },
+      });
+      const provider = new WatiProvider(makeConfig(), makeLogger());
+
+      const result = await provider.sendMessage('628', 'hi');
+
+      expect(result).toEqual({ id: 'wamid.NESTED' });
+    });
+
+    it('falls back to top-level id when no nested message is present', async () => {
+      mockedAxios.post.mockResolvedValue({ data: { id: 'top-level-id' } });
+      const provider = new WatiProvider(makeConfig(), makeLogger());
+
+      const result = await provider.sendMessage('628', 'hi');
+
+      expect(result).toEqual({ id: 'top-level-id' });
+    });
+
     it('logs and rethrows on send failure', async () => {
       const err = Object.assign(new Error('server error'), {
         response: { status: 500, data: { message: 'internal error' } },
@@ -100,11 +129,28 @@ describe('WatiProvider', () => {
   describe('parseWebhook', () => {
     it('extracts a text message from a Wati webhook payload', () => {
       const provider = new WatiProvider(makeConfig(), makeLogger());
-      const payload = { waId: '628123456789', text: 'is 15-20 june free?', id: 'msg-1', type: 'text' };
+      const payload = {
+        waId: '628123456789',
+        text: 'is 15-20 june free?',
+        id: 'msg-1',
+        whatsappMessageId: 'wamid.AAA',
+        type: 'text',
+      };
 
       expect(provider.parseWebhook(payload)).toEqual({
         from: '628123456789',
         text: 'is 15-20 june free?',
+        id: 'wamid.AAA',
+      });
+    });
+
+    it('falls back to the WATI internal id when wamid is absent', () => {
+      const provider = new WatiProvider(makeConfig(), makeLogger());
+      const payload = { waId: '628', text: 'hi', id: 'msg-1', type: 'text' };
+
+      expect(provider.parseWebhook(payload)).toEqual({
+        from: '628',
+        text: 'hi',
         id: 'msg-1',
       });
     });
@@ -133,12 +179,13 @@ describe('WatiProvider', () => {
   });
 
   describe('parseOutboundEcho', () => {
-    it('returns an echo for an owner-sent text event', () => {
+    it('returns an echo for an owner-sent text event, preferring wamid', () => {
       const provider = new WatiProvider(makeConfig(), makeLogger());
       const payload = {
         waId: '628123456789',
         text: 'hi, calling you in 5',
         id: 'echo-1',
+        whatsappMessageId: 'wamid.BBB',
         type: 'text',
         owner: true,
       };
@@ -146,6 +193,17 @@ describe('WatiProvider', () => {
       expect(provider.parseOutboundEcho(payload)).toEqual({
         to: '628123456789',
         text: 'hi, calling you in 5',
+        id: 'wamid.BBB',
+      });
+    });
+
+    it('falls back to the WATI internal id when wamid is absent', () => {
+      const provider = new WatiProvider(makeConfig(), makeLogger());
+      const payload = { waId: '628', text: 'hi', id: 'echo-1', type: 'text', owner: true };
+
+      expect(provider.parseOutboundEcho(payload)).toEqual({
+        to: '628',
+        text: 'hi',
         id: 'echo-1',
       });
     });

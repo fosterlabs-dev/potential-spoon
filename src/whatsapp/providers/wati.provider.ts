@@ -9,11 +9,15 @@ import {
   WhatsAppProvider,
 } from './provider.interface';
 
-// Wati webhook body shape (inbound message event)
+// Wati webhook body shape (inbound message + outbound echo events).
+// `whatsappMessageId` is the canonical Meta wamid; `id` is WATI's internal
+// record id and differs per WATI channel even for the same underlying
+// WhatsApp message — prefer the wamid for dedup.
 type WatiWebhookPayload = {
   waId?: string;
   text?: string;
   id?: string;
+  whatsappMessageId?: string;
   type?: string;
   created?: string;
   timestamp?: string;
@@ -53,6 +57,10 @@ export class WatiProvider implements WhatsAppProvider {
           headers: { Authorization: `Bearer ${this.accessToken}` },
         },
       );
+      this.logger.debug('whatsapp', 'wati sendSessionMessage raw response', {
+        to,
+        data: res.data,
+      });
       const id = this.extractMessageId(res.data);
       this.logger.info('whatsapp', 'sent message via wati', { to, id });
       return { id };
@@ -86,6 +94,11 @@ export class WatiProvider implements WhatsAppProvider {
         },
         { headers: { Authorization: `Bearer ${this.accessToken}` } },
       );
+      this.logger.debug('whatsapp', 'wati sendTemplateMessage raw response', {
+        to,
+        templateName,
+        data: res.data,
+      });
       const id = this.extractMessageId(res.data);
       this.logger.info('whatsapp', 'sent template via wati', {
         to,
@@ -110,6 +123,16 @@ export class WatiProvider implements WhatsAppProvider {
   private extractMessageId(data: unknown): string | undefined {
     if (!data || typeof data !== 'object') return undefined;
     const obj = data as Record<string, unknown>;
+    // Observed WATI send response: { ok, result, message: { whatsappMessageId, id, ... } }
+    // Prefer the wamid — the echo webhook reports the same value, so dedup
+    // works across channels and matches bot-vs-manual replies correctly.
+    const message = obj.message;
+    if (message && typeof message === 'object') {
+      const msg = message as Record<string, unknown>;
+      if (typeof msg.whatsappMessageId === 'string') return msg.whatsappMessageId;
+      if (typeof msg.id === 'string') return msg.id;
+    }
+    if (typeof obj.whatsappMessageId === 'string') return obj.whatsappMessageId;
     if (typeof obj.id === 'string') return obj.id;
     if (typeof obj.messageId === 'string') return obj.messageId;
     return undefined;
@@ -131,7 +154,9 @@ export class WatiProvider implements WhatsAppProvider {
     }
 
     const profileName = body.senderName?.trim() || undefined;
-    return { from: body.waId, text: body.text, id: body.id, profileName };
+    // Prefer wamid so dedup catches cross-channel duplicate deliveries.
+    const id = body.whatsappMessageId ?? body.id;
+    return { from: body.waId, text: body.text, id, profileName };
   }
 
   parseOutboundEcho(payload: unknown): OutboundEcho | null {
@@ -149,7 +174,10 @@ export class WatiProvider implements WhatsAppProvider {
       return null;
     }
 
-    return { to: body.waId, text: body.text, id: body.id };
+    // Prefer wamid: the bot's own send response and its echo share this id,
+    // so wasRecentlySentByBot can tell bot echoes apart from manual replies.
+    const id = body.whatsappMessageId ?? body.id;
+    return { to: body.waId, text: body.text, id };
   }
 
   private messageCreatedMs(body: WatiWebhookPayload): number | null {
