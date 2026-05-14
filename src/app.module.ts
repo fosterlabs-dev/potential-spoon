@@ -5,6 +5,7 @@ import { AvailabilityModule } from './availability/availability.module';
 import { BookingRulesModule } from './booking-rules/booking-rules.module';
 import { ComposerModule } from './composer/composer.module';
 import { ConversationModule } from './conversation/conversation.module';
+import { EmailIntegrationModule } from './email-integration/email-integration.module';
 import { FollowUpsModule } from './follow-ups/follow-ups.module';
 import { FragmentsModule } from './fragments/fragments.module';
 import { HelpersModule } from './helpers/helpers.module';
@@ -39,6 +40,7 @@ import { WhatsappModule } from './whatsapp/whatsapp.module';
     HoldsModule,
     FollowUpsModule,
     NotificationsModule,
+    EmailIntegrationModule,
     OrchestratorModule,
   ],
 })
