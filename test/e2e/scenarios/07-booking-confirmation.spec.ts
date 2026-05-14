@@ -34,9 +34,12 @@ describe('Scenario 7 — Booking confirmation', () => {
     expectJimNotified(h);
   });
 
-  it('7.2 — INSTANT_BOOK_ENABLED=true uses booking_confirmed_instant_book', async () => {
-    await h.shutdown();
-    h = await buildHarness({ env: { INSTANT_BOOK_ENABLED: 'true' } });
+  it('7.2 — instant_book_enabled=true uses booking_confirmed_instant_book', async () => {
+    const flagRow = h.airtable
+      .rows('BookingRules')
+      .find((r) => r.fields.key === 'instant_book_enabled');
+    if (!flagRow) throw new Error('instant_book_enabled flag not seeded');
+    await h.airtable.update('BookingRules', flagRow.id, { value: 'true' });
 
     await sendIncoming(h, 'Yes please book me in', {
       parse: { intent: 'booking_confirmation', confidence: 0.95 },
@@ -44,8 +47,6 @@ describe('Scenario 7 — Booking confirmation', () => {
     expectTemplateUsed(h, 'booking_confirmed_instant_book');
     expectJimNotified(h);
     await expectConversationStatus(h, 'bot');
-
-    process.env.INSTANT_BOOK_ENABLED = 'false';
   });
 
   // 7.4 (capture email) is not yet implemented in the orchestrator — CRM expansion phase.

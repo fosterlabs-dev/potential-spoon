@@ -1,16 +1,40 @@
-import { ConfigService } from '@nestjs/config';
+import { AirtableService } from '../airtable/airtable.service';
+import { LoggerService } from '../logger/logger.service';
 import { BookingRulesService } from './booking-rules.service';
 
-const makeConfig = (year2026Booked: 'true' | 'false' = 'true'): ConfigService =>
-  ({ get: () => year2026Booked }) as unknown as ConfigService;
+const makeLogger = (): LoggerService =>
+  ({
+    debug: jest.fn(),
+    info: jest.fn(),
+    warn: jest.fn(),
+    error: jest.fn(),
+  }) as unknown as LoggerService;
+
+const makeAirtable = (
+  flags: Record<string, string> = {},
+): AirtableService => {
+  return {
+    list: jest.fn().mockImplementation((_table: string, options: { filterByFormula?: string } = {}) => {
+      const match = options.filterByFormula?.match(/^\{key\}='(.+)'$/);
+      const key = match?.[1];
+      if (key && key in flags) {
+        return Promise.resolve([
+          { id: `rec-${key}`, fields: { key, value: flags[key], active: true } },
+        ]);
+      }
+      return Promise.resolve([]);
+    }),
+  } as unknown as AirtableService;
+};
+
+const makeService = (flags: Record<string, string> = {}): BookingRulesService =>
+  new BookingRulesService(makeAirtable(flags), makeLogger());
 
 // Known Sundays
 const SUN_2025_07_06 = new Date('2025-07-06'); // Sunday
 const SUN_2025_07_13 = new Date('2025-07-13'); // Sunday
 const SUN_2025_07_27 = new Date('2025-07-27'); // Sunday (21 nights from Jul 6)
-const SUN_2025_07_27_28d = new Date('2025-08-03'); // Sunday (28 nights from Jul 6)
 const SUN_2025_09_07 = new Date('2025-09-07'); // Sunday
-const SUN_2025_09_14 = new Date('2025-09-14'); // Sunday
 const SUN_2025_11_02 = new Date('2025-11-02'); // Sunday
 const SUN_2025_11_30 = new Date('2025-11-30'); // Sunday (28 nights from Nov 2)
 const MON_2025_07_07 = new Date('2025-07-07'); // Monday
@@ -20,29 +44,35 @@ const SUN_2026_07_12 = new Date('2026-07-12'); // Sunday in 2026
 
 describe('BookingRulesService', () => {
   describe('2026 redirect', () => {
-    it('blocks 2026 dates when YEAR_2026_FULLY_BOOKED=true', () => {
-      const svc = new BookingRulesService(makeConfig('true'));
-      const result = svc.validate(SUN_2026_07_05, SUN_2026_07_12);
+    it('blocks 2026 dates when year_2026_fully_booked=true', async () => {
+      const svc = makeService({ year_2026_fully_booked: 'true' });
+      const result = await svc.validate(SUN_2026_07_05, SUN_2026_07_12);
       expect(result).toEqual({ pass: false, reason: 'year_2026_redirect' });
     });
 
-    it('allows 2026 dates when YEAR_2026_FULLY_BOOKED=false', () => {
-      const svc = new BookingRulesService(makeConfig('false'));
-      const result = svc.validate(SUN_2026_07_05, SUN_2026_07_12);
+    it('allows 2026 dates when year_2026_fully_booked=false', async () => {
+      const svc = makeService({ year_2026_fully_booked: 'false' });
+      const result = await svc.validate(SUN_2026_07_05, SUN_2026_07_12);
       expect(result.pass).toBe(true);
     });
 
-    it('allows 2025 dates regardless of flag', () => {
-      const svc = new BookingRulesService(makeConfig('true'));
-      const result = svc.validate(SUN_2025_07_06, SUN_2025_07_13);
+    it('allows 2026 dates when the flag row is missing', async () => {
+      const svc = makeService();
+      const result = await svc.validate(SUN_2026_07_05, SUN_2026_07_12);
+      expect(result.pass).toBe(true);
+    });
+
+    it('allows 2025 dates regardless of flag', async () => {
+      const svc = makeService({ year_2026_fully_booked: 'true' });
+      const result = await svc.validate(SUN_2025_07_06, SUN_2025_07_13);
       expect(result.pass).toBe(true);
     });
   });
 
   describe('Sunday-to-Sunday validation', () => {
-    it('blocks when check-in is not a Sunday and suggests next Sunday pair', () => {
-      const svc = new BookingRulesService(makeConfig('false'));
-      const result = svc.validate(MON_2025_07_07, SUN_2025_07_13);
+    it('blocks when check-in is not a Sunday and suggests next Sunday pair', async () => {
+      const svc = makeService();
+      const result = await svc.validate(MON_2025_07_07, SUN_2025_07_13);
 
       expect(result).toEqual({
         pass: false,
@@ -52,9 +82,9 @@ describe('BookingRulesService', () => {
       });
     });
 
-    it('blocks when check-out is not a Sunday and keeps Sunday check-in', () => {
-      const svc = new BookingRulesService(makeConfig('false'));
-      const result = svc.validate(SUN_2025_07_06, SAT_2025_07_12);
+    it('blocks when check-out is not a Sunday and keeps Sunday check-in', async () => {
+      const svc = makeService();
+      const result = await svc.validate(SUN_2025_07_06, SAT_2025_07_12);
 
       expect(result).toEqual({
         pass: false,
@@ -64,25 +94,25 @@ describe('BookingRulesService', () => {
       });
     });
 
-    it('blocks when both are non-Sunday', () => {
-      const svc = new BookingRulesService(makeConfig('false'));
-      const result = svc.validate(MON_2025_07_07, SAT_2025_07_12);
+    it('blocks when both are non-Sunday', async () => {
+      const svc = makeService();
+      const result = await svc.validate(MON_2025_07_07, SAT_2025_07_12);
       expect(result.pass).toBe(false);
       if (!result.pass) expect(result.reason).toBe('not_sunday');
     });
 
-    it('passes when both are Sundays', () => {
-      const svc = new BookingRulesService(makeConfig('false'));
-      expect(svc.validate(SUN_2025_07_06, SUN_2025_07_13).pass).toBe(true);
+    it('passes when both are Sundays', async () => {
+      const svc = makeService();
+      expect((await svc.validate(SUN_2025_07_06, SUN_2025_07_13)).pass).toBe(true);
     });
   });
 
   describe('minimum stay', () => {
-    it('blocks when nights < 7 and suggests check-in + 7 days', () => {
+    it('blocks when nights < 7 and suggests check-in + 7 days', async () => {
       const checkIn = new Date('2025-07-06'); // Sunday
       const checkOut = new Date('2025-07-06'); // same day — 0 nights
-      const svc = new BookingRulesService(makeConfig('false'));
-      const result = svc.validate(checkIn, checkOut);
+      const svc = makeService();
+      const result = await svc.validate(checkIn, checkOut);
 
       expect(result).toEqual({
         pass: false,
@@ -92,75 +122,124 @@ describe('BookingRulesService', () => {
       });
     });
 
-    it('passes for a 7-night Sunday stay', () => {
-      const svc = new BookingRulesService(makeConfig('false'));
-      expect(svc.validate(SUN_2025_07_06, SUN_2025_07_13).pass).toBe(true);
+    it('passes for a 7-night Sunday stay', async () => {
+      const svc = makeService();
+      expect((await svc.validate(SUN_2025_07_06, SUN_2025_07_13)).pass).toBe(true);
     });
 
-    it('passes for a 14-night Sunday stay', () => {
-      const svc = new BookingRulesService(makeConfig('false'));
+    it('passes for a 14-night Sunday stay', async () => {
+      const svc = makeService();
       const checkOut14 = new Date('2025-07-20'); // 14 nights from Jul 6
-      expect(svc.validate(SUN_2025_07_06, checkOut14).pass).toBe(true);
+      expect((await svc.validate(SUN_2025_07_06, checkOut14)).pass).toBe(true);
     });
 
-    it('passes for a 21-night Sunday stay', () => {
-      const svc = new BookingRulesService(makeConfig('false'));
-      expect(svc.validate(SUN_2025_07_06, SUN_2025_07_27).pass).toBe(true);
+    it('passes for a 21-night Sunday stay', async () => {
+      const svc = makeService();
+      expect((await svc.validate(SUN_2025_07_06, SUN_2025_07_27)).pass).toBe(true);
     });
   });
 
   describe('long stay detection (Oct–May)', () => {
-    it('blocks a 28-night stay starting in November', () => {
-      const svc = new BookingRulesService(makeConfig('false'));
-      const result = svc.validate(SUN_2025_11_02, SUN_2025_11_30);
+    it('blocks a 28-night stay starting in November', async () => {
+      const svc = makeService();
+      const result = await svc.validate(SUN_2025_11_02, SUN_2025_11_30);
       expect(result).toEqual({ pass: false, reason: 'long_stay_manual' });
     });
 
-    it('allows a 28-night stay starting in July (summer)', () => {
-      const svc = new BookingRulesService(makeConfig('false'));
+    it('allows a 28-night stay starting in July (summer)', async () => {
+      const svc = makeService();
       const checkOut28 = new Date('2025-08-03'); // 28 nights from Jul 6 (Sunday)
-      expect(svc.validate(SUN_2025_07_06, checkOut28).pass).toBe(true);
+      expect((await svc.validate(SUN_2025_07_06, checkOut28)).pass).toBe(true);
     });
 
-    it('blocks a 28-night stay starting in October', () => {
-      const svc = new BookingRulesService(makeConfig('false'));
+    it('blocks a 28-night stay starting in October', async () => {
+      const svc = makeService();
       const checkIn = new Date('2025-10-05'); // Sunday
       const checkOut = new Date('2025-11-02'); // Sunday, 28 nights later
-      const result = svc.validate(checkIn, checkOut);
+      const result = await svc.validate(checkIn, checkOut);
       expect(result.pass).toBe(false);
       if (!result.pass) expect(result.reason).toBe('long_stay_manual');
     });
 
-    it('blocks a 28-night stay starting in May', () => {
-      const svc = new BookingRulesService(makeConfig('false'));
+    it('blocks a 28-night stay starting in May', async () => {
+      const svc = makeService();
       const checkIn = new Date('2025-05-04'); // Sunday
       const checkOut = new Date('2025-06-01'); // Sunday, 28 nights later
-      const result = svc.validate(checkIn, checkOut);
+      const result = await svc.validate(checkIn, checkOut);
       expect(result.pass).toBe(false);
       if (!result.pass) expect(result.reason).toBe('long_stay_manual');
     });
 
-    it('allows a 21-night stay in October (at or under limit)', () => {
-      const svc = new BookingRulesService(makeConfig('false'));
+    it('allows a 21-night stay in October (at or under limit)', async () => {
+      const svc = makeService();
       const checkIn = new Date('2025-10-05'); // Sunday
       const checkOut = new Date('2025-10-26'); // Sunday, 21 nights later
-      expect(svc.validate(checkIn, checkOut).pass).toBe(true);
+      expect((await svc.validate(checkIn, checkOut)).pass).toBe(true);
     });
   });
 
   describe('validation order', () => {
-    it('checks year_2026 before Sunday validation', () => {
-      const svc = new BookingRulesService(makeConfig('true'));
+    it('checks year_2026 before Sunday validation', async () => {
+      const svc = makeService({ year_2026_fully_booked: 'true' });
       // non-Sunday 2026 dates — should get year_2026 not not_sunday
-      const result = svc.validate(new Date('2026-07-06'), new Date('2026-07-13'));
+      const result = await svc.validate(new Date('2026-07-06'), new Date('2026-07-13'));
       if (!result.pass) expect(result.reason).toBe('year_2026_redirect');
     });
 
-    it('checks Sunday before min_stay', () => {
-      const svc = new BookingRulesService(makeConfig('false'));
+    it('checks Sunday before min_stay', async () => {
+      const svc = makeService();
       // Monday-to-Tuesday (not Sunday, also < 7 nights) — should get not_sunday
-      const result = svc.validate(new Date('2025-07-07'), new Date('2025-07-08'));
+      const result = await svc.validate(new Date('2025-07-07'), new Date('2025-07-08'));
       if (!result.pass) expect(result.reason).toBe('not_sunday');
     });
   });
+
+  describe('isYearFullyBooked', () => {
+    it('returns true for 2026 when flag is true', async () => {
+      const svc = makeService({ year_2026_fully_booked: 'true' });
+      expect(await svc.isYearFullyBooked(2026)).toBe(true);
+    });
+
+    it('returns false for 2026 when flag is false', async () => {
+      const svc = makeService({ year_2026_fully_booked: 'false' });
+      expect(await svc.isYearFullyBooked(2026)).toBe(false);
+    });
+
+    it('returns false for other years regardless of flag', async () => {
+      const svc = makeService({ year_2026_fully_booked: 'true' });
+      expect(await svc.isYearFullyBooked(2027)).toBe(false);
+    });
+  });
+
+  describe('isInstantBookEnabled', () => {
+    it('returns true when flag is "true"', async () => {
+      const svc = makeService({ instant_book_enabled: 'true' });
+      expect(await svc.isInstantBookEnabled()).toBe(true);
+    });
+
+    it('returns false when flag is "false"', async () => {
+      const svc = makeService({ instant_book_enabled: 'false' });
+      expect(await svc.isInstantBookEnabled()).toBe(false);
+    });
+
+    it('returns false when the flag row is missing', async () => {
+      const svc = makeService();
+      expect(await svc.isInstantBookEnabled()).toBe(false);
+    });
+  });
+
+  describe('Airtable failure', () => {
+    it('treats flag as false and warns when the read fails', async () => {
+      const logger = makeLogger();
+      const airtable = {
+        list: jest.fn().mockRejectedValue(new Error('boom')),
+      } as unknown as AirtableService;
+      const svc = new BookingRulesService(airtable, logger);
+      expect(await svc.isInstantBookEnabled()).toBe(false);
+      expect(logger.warn).toHaveBeenCalled();
+    });
+  });
+
+  // Keep references to suppress unused warnings in case linters get strict.
+  void SUN_2025_09_07;
 });

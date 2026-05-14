@@ -240,7 +240,7 @@ const TEMPLATES: TemplateRow[] = [
     text: `Thanks, your email is noted. The booking details will be on their way shortly.\n\nMany thanks`,
   },
 
-  // booking_confirmed_instant_book (used once INSTANT_BOOK_ENABLED=true)
+  // booking_confirmed_instant_book (used once BookingRules.instant_book_enabled=true)
   // NOTE: website URL kept — it's the operational point of this scenario.
   {
     key: 'booking_confirmed_instant_book',

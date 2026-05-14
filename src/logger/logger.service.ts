@@ -15,6 +15,7 @@ export type LogModule =
   | 'follow-ups'
   | 'notifications'
   | 'email-integration'
+  | 'booking-rules'
   | 'airtable';
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
@@ -43,6 +44,7 @@ const MODULE_COLOR: Record<LogModule, string> = {
   'follow-ups': '\x1b[94m',
   notifications: '\x1b[92m',
   'email-integration': '\x1b[95m',
+  'booking-rules': '\x1b[96m',
   airtable: '\x1b[90m',
 };
 

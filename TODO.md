@@ -103,7 +103,7 @@ Build in this order — each phase should be fully working and tested before mov
   - Sunday check-out validation
   - 7-night minimum enforcement → suggest full week
   - Weekly blocks only (7 / 14 / 21 nights)
-  - 2026 fully-booked redirect (configurable via `YEAR_2026_FULLY_BOOKED` env flag)
+  - 2026 fully-booked redirect (configurable via `BookingRules.year_2026_fully_booked`)
   - Oct–May long stay detection → flag for manual pricing
   - Discount request detection → flag + notify Jim
 - [x] **Seasonal pricing bands**
@@ -214,7 +214,7 @@ Build in this order — each phase should be fully working and tested before mov
 
 **Instant book toggle**
 
-- [x] **`INSTANT_BOOK_ENABLED` env flag** — read in orchestrator
+- [x] **`instant_book_enabled` BookingRules flag** — read in orchestrator
 - [x] **Swap template**: `booking_confirmed_handoff` → `booking_confirmed_instant_book` when flag is true
 
 **Phase 6 tests**
@@ -230,7 +230,7 @@ Build in this order — each phase should be fully working and tested before mov
 
 ## Things not to forget
 
-- `YEAR_2026_FULLY_BOOKED=true` is a runtime flag — make it easy to flip when dates open up for 2027 planning
+- `BookingRules.year_2026_fully_booked=true` is a runtime flag — make it easy to flip when dates open up for 2027 planning
 - Test Claude parsing edge cases: "early August", "next week", "around Christmas", relative dates
 - Test iCal edge cases: overlapping events, all-day vs timed, empty feed, feed HTTP error
 - WhatsApp 24-hour messaging window — check if nudges on older conversations violate the policy

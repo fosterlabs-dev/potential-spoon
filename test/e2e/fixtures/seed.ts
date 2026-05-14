@@ -95,6 +95,12 @@ const KB_TOPICS: Array<{ topic_key: string; question_examples: string; answer: s
 export function seedAll(airtable: FakeAirtable): void {
   airtable.reset();
 
+  airtable.seed('BookingRules', [
+    { key: 'year_2026_fully_booked', value: 'true', active: true },
+    { key: 'instant_book_enabled', value: 'false', active: true },
+    { key: 'bot_paused_global', value: 'false', active: true },
+  ]);
+
   airtable.seed(
     'Pricing',
     PRICING_BANDS.map<AnyFields>((b) => ({

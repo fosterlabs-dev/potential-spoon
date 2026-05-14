@@ -70,8 +70,6 @@ export async function buildHarness(
 ): Promise<Harness> {
   process.env.OWNER_PHONE = OWNER;
   process.env.OWNER_EMAIL = 'owner@example.com';
-  process.env.YEAR_2026_FULLY_BOOKED = 'true';
-  process.env.INSTANT_BOOK_ENABLED = 'false';
   for (const [key, value] of Object.entries(options.env ?? {})) {
     process.env[key] = value;
   }

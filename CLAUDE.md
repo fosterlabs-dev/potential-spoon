@@ -176,7 +176,7 @@ Write failing test → minimal code → refactor → move on.
 36. Wire escalation triggers: uncertain, outside KB, discount, long stay, hold conflicts, unmatched guest
 
 #### 🔴 Phase 7 — Instant book toggle
-37. Config flag `INSTANT_BOOK_ENABLED`
+37. Config flag `instant_book_enabled` in `BookingRules`
 38. Swap `booking_confirmed_handoff` variant based on flag
 39. When Jim flips the switch post-SuperControl setup: bot redirects to website
 
@@ -249,15 +249,23 @@ Property-fact FAQs. Bot answers directly (no handoff) when parser classifies `ge
 
 ### `BookingRules` 🔴
 Simple key-value config for rules that change:
-- `key` (e.g. `year_2026_fully_booked`, `bot_paused_global`)
+- `key`
 - `value`
 - `active`
 
-`bot_paused_global` (value `"true"` / `"false"`) is the global kill-switch.
-When `"true"`, `ConversationService.canSendBot` returns false for every phone,
-so no template is sent and no composer reply is dispatched. Inbound messages
-are still logged. Toggled via `/pause` and `/resume` from `OWNER_PHONE` (no
-argument), or by editing the row directly in Airtable.
+Recognised keys (string values, `"true"` / `"false"`):
+- `year_2026_fully_booked` — when `true`, 2026 dates trigger the redirect
+  template. Read by `BookingRulesService` on every validation.
+- `instant_book_enabled` — when `true`, booking-confirmation replies use the
+  instant-book variant. Read by `MessageHandlerService` via
+  `BookingRulesService.isInstantBookEnabled()`.
+- `bot_paused_global` — global kill-switch. When `"true"`,
+  `ConversationService.canSendBot` returns false for every phone, so no
+  template is sent and no composer reply is dispatched. Inbound messages are
+  still logged. Toggled via `/pause` and `/resume` from `OWNER_PHONE` (no
+  argument), or by editing the row directly in Airtable.
+
+All three flags can be flipped in Airtable without a redeploy.
 
 ### Owner commands
 Sent from `OWNER_PHONE` to the business number. Messages from any other
@@ -328,8 +336,8 @@ SUPERCONTROL_IMAP_PASS=
 SUPERCONTROL_WEBHOOK_SECRET=
 
 # Feature flags
-INSTANT_BOOK_ENABLED=false
-YEAR_2026_FULLY_BOOKED=true
+# instant_book_enabled and year_2026_fully_booked are stored as rows in the
+# Airtable BookingRules table — no env var, toggle in Airtable.
 
 # Response mode
 RESPONSE_MODE=template

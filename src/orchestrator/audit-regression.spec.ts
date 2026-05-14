@@ -138,8 +138,9 @@ const buildHandler = (w: Wires = {}): MessageHandlerService => {
   const bookingRules =
     w.bookingRules ??
     ({
-      validate: jest.fn().mockReturnValue({ pass: true }),
-      isYearFullyBooked: jest.fn().mockReturnValue(false),
+      validate: jest.fn().mockResolvedValue({ pass: true }),
+      isYearFullyBooked: jest.fn().mockResolvedValue(false),
+      isInstantBookEnabled: jest.fn().mockResolvedValue(false),
     } as unknown as BookingRulesService);
   const holds =
     w.holds ??
@@ -404,8 +405,11 @@ describe('audit regression — bot conversation problems', () => {
       ),
     } as unknown as ParserService;
     const bookingRules = {
-      validate: jest.fn().mockReturnValue({ pass: true }),
-      isYearFullyBooked: jest.fn().mockImplementation((y: number) => y === 2026),
+      validate: jest.fn().mockResolvedValue({ pass: true }),
+      isYearFullyBooked: jest
+        .fn()
+        .mockImplementation(async (y: number) => y === 2026),
+      isInstantBookEnabled: jest.fn().mockResolvedValue(false),
     } as unknown as BookingRulesService;
     const helpers = {
       findClosestAvailableWeek: jest.fn().mockResolvedValue(null),

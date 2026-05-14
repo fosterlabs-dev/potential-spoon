@@ -148,13 +148,11 @@ const makeMessageLog = (): MessageLogService =>
   }) as unknown as MessageLogService;
 
 const makeConfig = (
-  overrides: { owner?: string; instantBook?: boolean } = {},
+  overrides: { owner?: string } = {},
 ): ConfigService => {
   const owner = 'owner' in overrides ? overrides.owner : OWNER;
-  const instantBook = overrides.instantBook ? 'true' : 'false';
   const values: Record<string, string | undefined> = {
     OWNER_PHONE: owner,
-    INSTANT_BOOK_ENABLED: instantBook,
   };
   return {
     get: (key: string) => values[key],
@@ -171,8 +169,9 @@ const makeBookingRules = (
   result: RulesValidation = { pass: true },
 ): BookingRulesService =>
   ({
-    validate: jest.fn().mockReturnValue(result),
-    isYearFullyBooked: jest.fn().mockReturnValue(false),
+    validate: jest.fn().mockResolvedValue(result),
+    isYearFullyBooked: jest.fn().mockResolvedValue(false),
+    isInstantBookEnabled: jest.fn().mockResolvedValue(false),
   }) as unknown as BookingRulesService;
 
 const makeHolds = (hasOverlap = false): HoldsService =>

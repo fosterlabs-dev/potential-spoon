@@ -1,11 +1,21 @@
 import { Injectable } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { AirtableService } from '../airtable/airtable.service';
+import { LoggerService } from '../logger/logger.service';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const MIN_NIGHTS = 7;
 const MAX_STANDARD_NIGHTS = 21;
 // Months that trigger manual pricing for long stays: Oct(9) through May(4)
 const LONG_STAY_MONTHS = new Set([9, 10, 11, 0, 1, 2, 3, 4]);
+
+const YEAR_2026_FULLY_BOOKED_KEY = 'year_2026_fully_booked';
+const INSTANT_BOOK_ENABLED_KEY = 'instant_book_enabled';
+
+type BookingRulesFields = {
+  key?: string;
+  value?: string;
+  active?: boolean;
+};
 
 export type RulesValidation =
   | { pass: true }
@@ -26,15 +36,16 @@ export type RulesValidation =
 
 @Injectable()
 export class BookingRulesService {
-  private readonly year2026Booked: boolean;
+  constructor(
+    private readonly airtable: AirtableService,
+    private readonly logger: LoggerService,
+  ) {}
 
-  constructor(config: ConfigService) {
-    this.year2026Booked =
-      config.get<string>('YEAR_2026_FULLY_BOOKED') === 'true';
-  }
-
-  validate(checkIn: Date, checkOut: Date): RulesValidation {
-    if (this.year2026Booked && checkIn.getUTCFullYear() === 2026) {
+  async validate(checkIn: Date, checkOut: Date): Promise<RulesValidation> {
+    if (
+      checkIn.getUTCFullYear() === 2026 &&
+      (await this.getBooleanFlag(YEAR_2026_FULLY_BOOKED_KEY))
+    ) {
       return { pass: false, reason: 'year_2026_redirect' };
     }
 
@@ -81,8 +92,41 @@ export class BookingRulesService {
    * True when the bot should refuse a month-level query because the year is
    * fully booked. Used by the month-query path which has no concrete dates.
    */
-  isYearFullyBooked(year: number): boolean {
-    return this.year2026Booked && year === 2026;
+  async isYearFullyBooked(year: number): Promise<boolean> {
+    if (year !== 2026) return false;
+    return this.getBooleanFlag(YEAR_2026_FULLY_BOOKED_KEY);
+  }
+
+  async isInstantBookEnabled(): Promise<boolean> {
+    return this.getBooleanFlag(INSTANT_BOOK_ENABLED_KEY);
+  }
+
+  private async getBooleanFlag(key: string): Promise<boolean> {
+    try {
+      const rows = await this.airtable.list<BookingRulesFields>(
+        'BookingRules',
+        {
+          filterByFormula: `{key}='${key}'`,
+          maxRecords: 1,
+        },
+      );
+      return this.parseBooleanValue(rows[0]?.fields.value);
+    } catch (err) {
+      this.logger.warn('booking-rules', 'flag read failed; defaulting to false', {
+        key,
+        error: (err as Error).message,
+      });
+      return false;
+    }
+  }
+
+  private parseBooleanValue(value: unknown): boolean {
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'string') {
+      const v = value.trim().toLowerCase();
+      return v === 'true' || v === '1' || v === 'yes';
+    }
+    return false;
   }
 
   private nextSunday(date: Date): Date {

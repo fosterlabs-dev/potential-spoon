@@ -49,7 +49,6 @@ type MergedIntent = {
 @Injectable()
 export class MessageHandlerService {
   private readonly ownerPhone: string | undefined;
-  private readonly instantBookEnabled: boolean;
 
   constructor(
     private readonly parser: ParserService,
@@ -71,8 +70,6 @@ export class MessageHandlerService {
     config: ConfigService,
   ) {
     this.ownerPhone = config.get<string>('OWNER_PHONE');
-    this.instantBookEnabled =
-      config.get<string>('INSTANT_BOOK_ENABLED') === 'true';
   }
 
   async handleOwnerTakeover(phone: string): Promise<void> {
@@ -239,7 +236,8 @@ export class MessageHandlerService {
         return;
 
       case 'booking_confirmation': {
-        const templateKey = this.instantBookEnabled
+        const instantBookEnabled = await this.bookingRules.isInstantBookEnabled();
+        const templateKey = instantBookEnabled
           ? 'booking_confirmed_instant_book'
           : parsed.guestEmail
             ? 'booking_email_received_handoff'
@@ -329,7 +327,7 @@ export class MessageHandlerService {
     if (!merged.checkIn || !merged.checkOut) return;
     const name = merged.customerName ?? '';
 
-    const rule = this.bookingRules.validate(merged.checkIn, merged.checkOut);
+    const rule = await this.bookingRules.validate(merged.checkIn, merged.checkOut);
     if (!rule.pass) {
       switch (rule.reason) {
         case 'year_2026_redirect':
@@ -445,7 +443,7 @@ export class MessageHandlerService {
       return;
     }
 
-    const rule = this.bookingRules.validate(merged.checkIn, merged.checkOut);
+    const rule = await this.bookingRules.validate(merged.checkIn, merged.checkOut);
     if (!rule.pass) {
       switch (rule.reason) {
         case 'year_2026_redirect':
@@ -547,8 +545,10 @@ export class MessageHandlerService {
   ): Promise<void> {
     const name = merged.customerName ?? '';
     const years = this.monthQueryYears(parsed);
-    const allBlocked =
-      years.length > 0 && years.every((y) => this.bookingRules.isYearFullyBooked(y));
+    const yearBlocks = await Promise.all(
+      years.map((y) => this.bookingRules.isYearFullyBooked(y)),
+    );
+    const allBlocked = years.length > 0 && yearBlocks.every(Boolean);
     if (allBlocked) {
       await this.sendTemplate(from, 'year_2026_redirect', {
         name,
