@@ -1,4 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { ConversationService } from '../conversation/conversation.service';
 import { LoggerService } from '../logger/logger.service';
 import type {
@@ -25,6 +26,7 @@ export class WhatsappService {
     @Inject(WHATSAPP_PROVIDER) private readonly provider: WhatsAppProvider,
     private readonly logger: LoggerService,
     private readonly conversation: ConversationService,
+    private readonly config: ConfigService,
   ) {}
 
   async sendMessage(to: string, text: string, options: SendOptions = {}): Promise<void> {
@@ -81,11 +83,19 @@ export class WhatsappService {
     return this.provider.validateWebhookSignature(raw, headers);
   }
 
+  // Meta's webhook verification handshake is provider-agnostic: it just needs
+  // the verify token to match. Handle it here so it works regardless of which
+  // provider is active (e.g. WATI's API doesn't use this, but the underlying
+  // Meta Business app may still verify against our URL).
   verifyWebhook(mode: string, token: string, challenge: string): string {
-    if (!this.provider.verifyWebhook) {
-      throw new Error('webhook verification not supported by this provider');
+    const expected = this.config.get<string>('WHATSAPP_VERIFY_TOKEN');
+    if (!expected) {
+      throw new Error('WHATSAPP_VERIFY_TOKEN not configured');
     }
-    return this.provider.verifyWebhook(mode, token, challenge);
+    if (mode !== 'subscribe' || token !== expected) {
+      throw new Error('verification failed');
+    }
+    return challenge;
   }
 
   private markSent(id: string): void {

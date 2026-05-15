@@ -1,3 +1,4 @@
+import { ConfigService } from '@nestjs/config';
 import { ConversationService } from '../conversation/conversation.service';
 import { LoggerService } from '../logger/logger.service';
 import { WhatsAppProvider } from './providers/provider.interface';
@@ -24,11 +25,23 @@ const makeLogger = (): LoggerService =>
     error: jest.fn(),
   }) as unknown as LoggerService;
 
+const makeConfig = (verifyToken: string | undefined): ConfigService =>
+  ({ get: jest.fn().mockReturnValue(verifyToken) }) as unknown as ConfigService;
+
 const makeService = (
   provider: WhatsAppProvider,
   canSend = true,
+  verifyToken: string | undefined = 'tok',
 ): WhatsappService =>
-  new WhatsappService(provider, makeLogger(), makeConversation(canSend));
+  new WhatsappService(
+    provider,
+    makeLogger(),
+    makeConversation(canSend),
+    makeConfig(verifyToken),
+  );
+
+const makeServiceNoToken = (provider: WhatsAppProvider): WhatsappService =>
+  new WhatsappService(provider, makeLogger(), makeConversation(), makeConfig(undefined));
 
 describe('WhatsappService', () => {
   beforeEach(() => jest.clearAllMocks());
@@ -43,7 +56,7 @@ describe('WhatsappService', () => {
     it('skips the send when conversation is not in bot mode', async () => {
       const provider = makeProvider();
       const logger = makeLogger();
-      const service = new WhatsappService(provider, logger, makeConversation(false));
+      const service = new WhatsappService(provider, logger, makeConversation(false), makeConfig('tok'));
 
       await service.sendMessage('628', 'hi');
 
@@ -155,16 +168,28 @@ describe('WhatsappService', () => {
   });
 
   describe('verifyWebhook', () => {
-    it('delegates to the provider', () => {
-      const provider = makeProvider();
-      provider.verifyWebhook!.mockReturnValue('xyz');
-      expect(makeService(provider).verifyWebhook('subscribe', 'tok', 'xyz')).toBe('xyz');
+    it('returns the challenge when mode and token match the env var', () => {
+      expect(makeService(makeProvider(), true, 'tok').verifyWebhook('subscribe', 'tok', 'xyz')).toBe(
+        'xyz',
+      );
     });
 
-    it('throws when the provider does not support verifyWebhook', () => {
-      const provider = makeProvider();
-      delete (provider as Partial<typeof provider>).verifyWebhook;
-      expect(() => makeService(provider).verifyWebhook('subscribe', 'tok', 'c')).toThrow();
+    it('throws when the token does not match', () => {
+      expect(() =>
+        makeService(makeProvider(), true, 'tok').verifyWebhook('subscribe', 'wrong', 'c'),
+      ).toThrow();
+    });
+
+    it('throws when mode is not subscribe', () => {
+      expect(() =>
+        makeService(makeProvider(), true, 'tok').verifyWebhook('unsubscribe', 'tok', 'c'),
+      ).toThrow();
+    });
+
+    it('throws when WHATSAPP_VERIFY_TOKEN is not configured', () => {
+      expect(() =>
+        makeServiceNoToken(makeProvider()).verifyWebhook('subscribe', 'tok', 'c'),
+      ).toThrow();
     });
   });
 });
