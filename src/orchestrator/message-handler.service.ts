@@ -236,12 +236,9 @@ export class MessageHandlerService {
         return;
 
       case 'booking_confirmation': {
-        const instantBookEnabled = await this.bookingRules.isInstantBookEnabled();
-        const templateKey = instantBookEnabled
-          ? 'booking_confirmed_instant_book'
-          : parsed.guestEmail
-            ? 'booking_email_received_handoff'
-            : 'booking_confirmed_handoff';
+        const templateKey = parsed.guestEmail
+          ? 'booking_email_received_handoff'
+          : 'booking_confirmed_handoff';
         const vars: TemplateVars = parsed.guestEmail
           ? { name, email: parsed.guestEmail }
           : { name };
