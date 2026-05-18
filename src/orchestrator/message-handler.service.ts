@@ -240,6 +240,15 @@ export class MessageHandlerService {
           await this.handleMonthQuery(from, parsed, merged, history);
           return;
         }
+        // Customer asked for availability without giving fresh dates this turn.
+        // If we have dates carried over from a previous turn (pendingDates), don't
+        // silently re-run availability on the old dates — confirm them first so
+        // the customer can either re-affirm ("yes please" → handled by the
+        // awaiting_dates_confirmation guard above) or share new dates.
+        if (!parsed.checkIn && !parsed.checkOut && merged.checkIn && merged.checkOut) {
+          await this.sendDateReconfirmation(from, merged);
+          return;
+        }
         if (!merged.checkIn || !merged.checkOut) {
           await this.composeOrFallback(from, parsed, merged, history, {
             scenario: 'dates_unclear',
@@ -1142,6 +1151,32 @@ export class MessageHandlerService {
 
   private monthPhraseForDate(d: Date): string {
     return ` for ${this.monthName(d)}`;
+  }
+
+  /**
+   * Customer came back asking for availability without specifying dates, but
+   * we have dates carried over from a previous turn. Don't silently re-run
+   * availability — send `date_reconfirmation_check` with the dates spelled
+   * out so they can either re-affirm (next turn's "yes please" routes through
+   * `awaiting_dates_confirmation` → handleAvailability) or share new dates.
+   */
+  private async sendDateReconfirmation(
+    from: string,
+    merged: MergedIntent,
+  ): Promise<void> {
+    if (!merged.checkIn || !merged.checkOut) return;
+    const name = merged.customerName ?? '';
+    await this.sendTemplate(from, 'date_reconfirmation_check', {
+      name,
+      name_comma: name ? `, ${name}` : '',
+      check_in: this.formatDate(merged.checkIn),
+      check_out: this.formatDate(merged.checkOut),
+    });
+    await this.parkSuggestedDates(
+      from,
+      this.isoDate(merged.checkIn),
+      this.isoDate(merged.checkOut),
+    );
   }
 
   /**

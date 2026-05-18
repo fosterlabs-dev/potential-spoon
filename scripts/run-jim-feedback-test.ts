@@ -76,32 +76,45 @@ const SCENARIOS: Scenario[] = [
     ],
   },
 
-  // ── Feedback 2: date re-confirmation follow-up ────────────────────────
-  // This is exercised by running the cron (`npm run trigger:follow-ups`)
-  // against a conversation whose `last_activity` is 3-14 days ago and which
-  // has `dates_requested` stored. The replay below covers the *reply* half
-  // of the loop: after the cron parks dates as `awaiting_dates_confirmation`,
-  // a customer "yes please" must run availability for the parked dates.
+  // ── Feedback 2: reactive date reconfirmation ──────────────────────────
+  // Customer comes back asking about availability without giving fresh dates,
+  // but pendingDates still holds last turn's dates. Instead of silently re-
+  // running availability on stale dates, the bot confirms first. Then on
+  // "yes please" it runs availability for the parked dates (via the
+  // awaiting_dates_confirmation guard).
   {
-    id: 'date-reconfirmation-yes',
-    title: 'After cron parks dates, "yes please" runs availability (not booking handoff)',
+    id: 'date-reconfirmation-reactive',
+    title: 'Re-asks for availability without dates → bot confirms previous dates first',
     feedbackRef: 'Feedback #2',
     turns: [
       {
-        customer: 'ok is the week saturday 7th august 2027 available ?',
+        customer: 'is the week of Sunday 22 August 2027 available?',
         skipGrade: true,
         notes:
-          'Priming: triggers dates_not_sunday_to_sunday template, which parks Sun 8 → Sun 15 Aug 2027 via the same `awaiting_dates_confirmation` path the cron will use.',
+          'Priming: gives bot a concrete week so pendingDates is populated. Bot will reply with quote / reserved.',
+      },
+      {
+        customer: 'is the villa available?',
+        mustInclude: [
+          /still looking|are you still/i,
+          /22\s?august|22 aug/i,
+        ],
+        mustNotInclude: [/share .*dates|specific .*dates/i],
+        notes:
+          'No new dates this turn but pendingDates has Sun 22 Aug → bot should ask "are you still looking at 22 August?" rather than re-running availability silently or asking generically for dates.',
       },
       {
         customer: 'yes please',
-        mustInclude: [/(available|reserved|already booked|free)/i],
+        mustInclude: [
+          /(available|reserved|already booked|free|that particular week)/i,
+        ],
         mustNotInclude: [
           /25\s?%|deposit/i,
           /book directly online|select booking from the menu/i,
+          /still looking|are you still/i,
         ],
         notes:
-          'Same routing as the cron-driven reconfirmation: "yes please" with parked dates should run availability for those dates.',
+          'After confirming, "yes please" runs availability for the parked Sun 22 Aug dates. Must not loop back to the reconfirmation template.',
       },
     ],
   },
@@ -143,8 +156,7 @@ const SCENARIOS: Scenario[] = [
       {
         customer: 'yes please',
         mustInclude: [
-          /(available|reserved|already booked|free)/i,
-          /(8|eighth)[\s,]+(august|aug)|(15|fifteenth)[\s,]+(august|aug)/i,
+          /(available|reserved|already booked|free|that particular week)/i,
         ],
         mustNotInclude: [
           /25\s?%|deposit/i,
@@ -152,7 +164,7 @@ const SCENARIOS: Scenario[] = [
           /balance is due 8 weeks/i,
         ],
         notes:
-          'Bot misclassifies "yes please" as booking_confirmation and sends booking_confirmed_handoff. Should instead run availability for the pending Sun 8 → Sun 15 Aug 2027 dates and reply with quote / reserved / alt.',
+          'Bot misclassifies "yes please" as booking_confirmation and sends booking_confirmed_handoff. Should instead run availability for the pending Sun 8 → Sun 15 Aug 2027 dates and reply with quote / reserved / priority. (Templates rotate variants — "That particular week" is variant 2 of availability_no_priority.)',
       },
     ],
   },
