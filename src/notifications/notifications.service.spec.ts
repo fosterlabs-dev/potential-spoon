@@ -76,7 +76,6 @@ describe('NotificationsService', () => {
     await svc.notifyOwner('discount asked', {
       reason: 'discount_request',
       from: '447111',
-      message: 'any chance of 10% off?',
     });
 
     expect(whatsapp.sendTemplate).toHaveBeenCalledWith(
@@ -89,8 +88,8 @@ describe('NotificationsService', () => {
     expect(email.send).toHaveBeenCalledWith(
       expect.objectContaining({
         to: 'jim@example.com',
-        subject: expect.stringContaining('discount_request'),
-        body: expect.stringContaining('any chance of 10% off?'),
+        subject: '[Bonté Maison] Discount Request — 447111',
+        body: 'discount asked',
       }),
     );
   });
@@ -288,7 +287,7 @@ describe('NotificationsService', () => {
     );
   });
 
-  it('includes context fields in the email body', async () => {
+  it('uses the caller-supplied text as the email body and derives the subject from reason + from', async () => {
     const email = makeEmail();
     const svc = new NotificationsService(
       makeConfig({ OWNER_EMAIL: 'jim@example.com' }),
@@ -299,18 +298,16 @@ describe('NotificationsService', () => {
       makeLogger(),
     );
 
-    await svc.notifyOwner('hold conflict', {
-      reason: 'hold_conflict',
-      from: '447111',
-      intent: 'availability_inquiry',
-      extra: { dates: '2027-07-11 → 2027-07-18' },
+    await svc.notifyOwner('Paused +44 7712 345678 for 60 minutes.', {
+      reason: 'owner_command',
+      from: '447712345678',
     });
 
     const call = (email.send as jest.Mock).mock.calls[0][0];
-    expect(call.body).toContain('hold conflict');
-    expect(call.body).toContain('From: 447111');
-    expect(call.body).toContain('Intent: availability_inquiry');
-    expect(call.body).toContain('dates: 2027-07-11 → 2027-07-18');
+    expect(call.body).toBe('Paused +44 7712 345678 for 60 minutes.');
+    expect(call.subject).toBe(
+      '[Bonté Maison] Owner Command — 447712345678',
+    );
   });
 
   describe('notifyOwnerAboutConversation', () => {
@@ -326,7 +323,7 @@ describe('NotificationsService', () => {
       followUpCount: 0,
     };
 
-    it('composes a structured block from the CRM snapshot', async () => {
+    it('renders the discount_request template with a friendly date and quote', async () => {
       const whatsapp = makeWhatsapp();
       const email = makeEmail();
       const svc = new NotificationsService(
@@ -338,23 +335,74 @@ describe('NotificationsService', () => {
         makeLogger(),
       );
 
-      await svc.notifyOwnerAboutConversation('447111', 'discount_request', {
+      await svc.notifyOwnerAboutConversation('447711234567', 'discount_request', {
         message: 'any chance of a discount?',
       });
 
       const waText = (whatsapp.sendTemplate as jest.Mock).mock.calls[0][2]['1'];
-      expect(waText).toContain('Discount request');
-      expect(waText).toContain('Sarah Jenkins (447111)');
-      expect(waText).toContain('Status: Responded');
-      expect(waText).toContain('Last intent: pricing_inquiry');
-      expect(waText).toContain('Dates: 2027-07-11 → 2027-07-18');
+      // Lead line is hand-written, not the snake_case reason
+      expect(waText).toContain('*Discount asked.*');
+      // Guest line: pretty name + spaced UK phone
+      expect(waText).toContain('Sarah Jenkins (+44 7711 234567)');
+      // Friendly date range, same month so start drops the month name
+      expect(waText).toContain('Dates: Sun 11 — Sun 18 July 2027');
       expect(waText).toContain('Quote: £3,400');
-      expect(waText).toContain('available');
-      expect(waText).toContain('Email: sarah@example.com');
-      expect(waText).toContain('Message: "any chance of a discount?"');
+      expect(waText).toContain('"any chance of a discount?"');
+      // Removed noise
+      expect(waText).not.toContain('Status:');
+      expect(waText).not.toContain('Last intent:');
+      expect(waText).not.toContain('🔔');
+      // For discount_request we don't surface email
+      expect(waText).not.toContain('sarah@example.com');
 
       const call = (email.send as jest.Mock).mock.calls[0][0];
-      expect(call.subject).toContain('Sarah Jenkins');
+      expect(call.subject).toBe(
+        '[Bonté Maison] Discount asked — Sarah Jenkins',
+      );
+    });
+
+    it('renders booking_confirmation with the email and a Marked as Booked footer', async () => {
+      const whatsapp = makeWhatsapp();
+      const svc = new NotificationsService(
+        makeConfig({ OWNER_PHONE: '447000' }),
+        whatsapp,
+        makeEmail(),
+        makeConversation(snapshot),
+        makeBookingRules(),
+        makeLogger(),
+      );
+
+      await svc.notifyOwnerAboutConversation(
+        '447711234567',
+        'booking_confirmation',
+      );
+
+      const waText = (whatsapp.sendTemplate as jest.Mock).mock.calls[0][2]['1'];
+      expect(waText).toContain('🎉 *Wants to book.*');
+      expect(waText).toContain('Email: sarah@example.com');
+      expect(waText).toContain('Marked as Booked.');
+    });
+
+    it('renders hold_conflict with a Wanted: line and a hold-lapse nudge', async () => {
+      const whatsapp = makeWhatsapp();
+      const svc = new NotificationsService(
+        makeConfig({ OWNER_PHONE: '447000' }),
+        whatsapp,
+        makeEmail(),
+        makeConversation(snapshot),
+        makeBookingRules(),
+        makeLogger(),
+      );
+
+      await svc.notifyOwnerAboutConversation(
+        '447711234567',
+        'hold_conflict',
+      );
+
+      const waText = (whatsapp.sendTemplate as jest.Mock).mock.calls[0][2]['1'];
+      expect(waText).toContain('*Asked about dates already held.*');
+      expect(waText).toContain('Wanted: Sun 11 — Sun 18 July 2027');
+      expect(waText).toContain('before the hold lapses');
     });
 
     it('falls back to phone-only when CRM has no row', async () => {
@@ -368,11 +416,48 @@ describe('NotificationsService', () => {
         makeLogger(),
       );
 
-      await svc.notifyOwnerAboutConversation('447111', 'unclear_or_off_topic');
+      await svc.notifyOwnerAboutConversation(
+        '447711234567',
+        'unclear_or_off_topic',
+        { message: 'asdfgh??' },
+      );
 
       const waText = (whatsapp.sendTemplate as jest.Mock).mock.calls[0][2]['1'];
-      expect(waText).toContain('Guest: 447111');
-      expect(waText).toContain('Unclear / off-topic');
+      // No name available → guest line is just the formatted phone
+      expect(waText).toContain('+44 7711 234567');
+      expect(waText).not.toMatch(/\(\+44/); // no "Name (+44 ...)" parenthetical
+      expect(waText).toContain("*Bot couldn't follow this one.*");
+      expect(waText).toContain('"asdfgh??"');
+    });
+
+    it('handles cross-month date ranges with the month on both ends', async () => {
+      const longStaySnapshot: CrmSnapshot = {
+        ...snapshot,
+        datesRequested: '2025-10-05 → 2025-11-02',
+        priceQuoted: null,
+        availabilityResult: null,
+      };
+      const whatsapp = makeWhatsapp();
+      const svc = new NotificationsService(
+        makeConfig({ OWNER_PHONE: '447000' }),
+        whatsapp,
+        makeEmail(),
+        makeConversation(longStaySnapshot),
+        makeBookingRules(),
+        makeLogger(),
+      );
+
+      await svc.notifyOwnerAboutConversation(
+        '447711234567',
+        'long_stay_manual_pricing',
+      );
+
+      const waText = (whatsapp.sendTemplate as jest.Mock).mock.calls[0][2]['1'];
+      expect(waText).toContain('*Long stay — needs your pricing call.*');
+      expect(waText).toContain(
+        'Dates: Sun 5 October — Sun 2 November 2025 (28 nights)',
+      );
+      expect(waText).toContain('Not quoted yet — over to you.');
     });
 
     it('still delivers when CRM read throws', async () => {

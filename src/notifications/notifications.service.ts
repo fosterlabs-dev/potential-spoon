@@ -23,18 +23,16 @@ export type ConversationNotificationOptions = {
   extra?: Record<string, unknown>;
 };
 
-const REASON_LABELS: Record<string, string> = {
-  discount_request: 'Discount request',
-  long_stay_manual_pricing: 'Long-stay manual pricing',
-  faq_unknown: 'FAQ unknown — needs human',
-  complaint: 'Complaint / frustration',
-  human_request: 'Guest asked for a human',
-  booking_confirmation: 'Booking confirmation',
-  unclear_or_off_topic: 'Unclear / off-topic',
-  hold_conflict: 'Hold conflict',
-  dates_unavailable: 'Dates unavailable',
-  orchestrator_error: 'Orchestrator error',
-  owner_command: 'Owner command',
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+type ReasonContext = {
+  guestName: string;
+  phoneFormatted: string;
+  message?: string;
+  email?: string;
+  datesFormatted?: string;
+  nightsLabel?: string;
+  priceQuoted?: number;
 };
 
 @Injectable()
@@ -172,66 +170,307 @@ export class NotificationsService {
     snapshot: CrmSnapshot | null,
     opts: ConversationNotificationOptions,
   ): { whatsapp: string; subject: string; body: string } {
-    const label = this.reasonLabel(reason);
-    const guestLine = snapshot?.customerName
-      ? `Guest: ${snapshot.customerName} (${phone})`
-      : `Guest: ${phone}`;
-
-    const lines: string[] = [`🔔 Bonté Maison — ${label}`, guestLine];
-
-    if (snapshot) {
-      const statusBits: string[] = [`Status: ${snapshot.lifecycleStatus}`];
-      const lastIntent = opts.intent ?? snapshot.lastIntent;
-      if (lastIntent) statusBits.push(`Last intent: ${lastIntent}`);
-      if (snapshot.status !== 'bot') statusBits.push(`Mode: ${snapshot.status}`);
-      lines.push(statusBits.join(' · '));
-
-      if (snapshot.datesRequested) {
-        lines.push(`Dates: ${snapshot.datesRequested}`);
-      }
-      if (snapshot.priceQuoted || snapshot.availabilityResult) {
-        const quoteBits: string[] = [];
-        if (snapshot.priceQuoted) {
-          quoteBits.push(`Quote: £${Math.round(snapshot.priceQuoted).toLocaleString('en-GB')}`);
-        }
-        if (snapshot.availabilityResult) {
-          quoteBits.push(snapshot.availabilityResult);
-        }
-        lines.push(quoteBits.join(' · '));
-      }
-      if (snapshot.email) lines.push(`Email: ${snapshot.email}`);
-      if (snapshot.followUpCount && snapshot.followUpCount > 0) {
-        lines.push(`Follow-ups sent: ${snapshot.followUpCount}`);
-      }
-    } else if (opts.intent) {
-      lines.push(`Last intent: ${opts.intent}`);
-    }
-
-    if (opts.message) lines.push(`Message: "${opts.message}"`);
-
-    if (opts.extra) {
-      for (const [k, v] of Object.entries(opts.extra)) {
-        const value = this.stringify(v);
-        if (value) lines.push(`${k}: ${value}`);
-      }
-    }
-
-    const body = lines.join('\n');
-    const subject = snapshot?.customerName
-      ? `[Bonté Maison] ${label} — ${snapshot.customerName}`
-      : `[Bonté Maison] ${label} — ${phone}`;
-
+    const ctx = this.buildReasonContext(phone, snapshot, opts);
+    const bodyLines = this.renderReason(reason, ctx);
+    const body = bodyLines.join('\n');
+    const subject = this.subjectFor(reason, ctx, bodyLines);
     return { whatsapp: body, subject, body };
   }
 
-  private reasonLabel(reason: string): string {
-    return (
-      REASON_LABELS[reason] ??
-      reason
-        .split('_')
-        .map((w) => (w ? w[0].toUpperCase() + w.slice(1) : w))
-        .join(' ')
+  private buildReasonContext(
+    phone: string,
+    snapshot: CrmSnapshot | null,
+    opts: ConversationNotificationOptions,
+  ): ReasonContext {
+    const parsed = this.parseDatesRequested(snapshot?.datesRequested);
+    return {
+      guestName: snapshot?.customerName ?? '',
+      phoneFormatted: this.formatPhone(phone),
+      message: opts.message,
+      email: snapshot?.email ?? undefined,
+      datesFormatted: parsed?.formatted,
+      nightsLabel: parsed?.nightsLabel,
+      priceQuoted: snapshot?.priceQuoted ?? undefined,
+    };
+  }
+
+  private renderReason(reason: string, ctx: ReasonContext): string[] {
+    switch (reason) {
+      case 'discount_request':
+        return this.tplDiscount(ctx);
+      case 'booking_confirmation':
+        return this.tplBooking(ctx);
+      case 'faq_unknown':
+        return this.tplFaqUnknown(ctx);
+      case 'hold_conflict':
+        return this.tplHoldConflict(ctx);
+      case 'dates_unavailable':
+        return this.tplDatesUnavailable(ctx);
+      case 'complaint':
+        return this.tplComplaint(ctx);
+      case 'human_request':
+        return this.tplHumanRequest(ctx);
+      case 'long_stay_manual_pricing':
+        return this.tplLongStay(ctx);
+      case 'unclear_or_off_topic':
+        return this.tplUnclear(ctx);
+      case 'orchestrator_error':
+        return this.tplCrash(ctx);
+      case 'composer_fallback':
+        return this.tplComposerFallback(ctx);
+      default:
+        return this.tplGeneric(reason, ctx);
+    }
+  }
+
+  private tplDiscount(ctx: ReasonContext): string[] {
+    const lines: string[] = ['*Discount asked.*', '', this.guestLine(ctx)];
+    const facts = this.factLines(ctx);
+    if (facts.length) lines.push('', ...facts);
+    if (ctx.message) lines.push('', `"${ctx.message}"`);
+    return lines;
+  }
+
+  private tplBooking(ctx: ReasonContext): string[] {
+    const lines: string[] = ['🎉 *Wants to book.*', '', this.guestLine(ctx)];
+    const facts = this.factLines(ctx, { email: true });
+    if (facts.length) lines.push('', ...facts);
+    lines.push('', 'Marked as Booked.');
+    return lines;
+  }
+
+  private tplFaqUnknown(ctx: ReasonContext): string[] {
+    const lines: string[] = [
+      "*Question I couldn't answer.*",
+      '',
+      this.guestLine(ctx),
+    ];
+    if (ctx.message) lines.push('', `"${ctx.message}"`);
+    lines.push('', "Told them you'd come back shortly.");
+    return lines;
+  }
+
+  private tplHoldConflict(ctx: ReasonContext): string[] {
+    const lines: string[] = [
+      '*Asked about dates already held.*',
+      '',
+      this.guestLine(ctx),
+    ];
+    const wanted = this.wantedLine(ctx);
+    if (wanted) lines.push('', wanted);
+    lines.push(
+      '',
+      'Replied "unavailable" — worth a look before the hold lapses.',
     );
+    return lines;
+  }
+
+  private tplDatesUnavailable(ctx: ReasonContext): string[] {
+    const lines: string[] = [
+      '*Asked about dates that are already booked.*',
+      '',
+      this.guestLine(ctx),
+    ];
+    const wanted = this.wantedLine(ctx);
+    if (wanted) lines.push('', wanted);
+    lines.push('', 'Replied "unavailable".');
+    return lines;
+  }
+
+  private tplComplaint(ctx: ReasonContext): string[] {
+    const lines: string[] = ['*Sounds frustrated.*', '', this.guestLine(ctx)];
+    if (ctx.message) lines.push('', `"${ctx.message}"`);
+    lines.push('', 'Bot paused. Worth replying yourself.');
+    return lines;
+  }
+
+  private tplHumanRequest(ctx: ReasonContext): string[] {
+    const lines: string[] = [
+      '*Asked for you directly.*',
+      '',
+      this.guestLine(ctx),
+    ];
+    if (ctx.message) lines.push('', `"${ctx.message}"`);
+    lines.push('', 'Bot paused.');
+    return lines;
+  }
+
+  private tplLongStay(ctx: ReasonContext): string[] {
+    const lines: string[] = [
+      '*Long stay — needs your pricing call.*',
+      '',
+      this.guestLine(ctx),
+    ];
+    if (ctx.datesFormatted) {
+      const tail = ctx.nightsLabel ? ` (${ctx.nightsLabel})` : '';
+      lines.push('', `Dates: ${ctx.datesFormatted}${tail}`);
+    }
+    if (ctx.message) lines.push('', `"${ctx.message}"`);
+    lines.push('', 'Not quoted yet — over to you.');
+    return lines;
+  }
+
+  private tplUnclear(ctx: ReasonContext): string[] {
+    const lines: string[] = [
+      "*Bot couldn't follow this one.*",
+      '',
+      this.guestLine(ctx),
+    ];
+    if (ctx.message) lines.push('', `"${ctx.message}"`);
+    return lines;
+  }
+
+  private tplCrash(ctx: ReasonContext): string[] {
+    const lines: string[] = [
+      '*Bot crashed on this conversation.*',
+      '',
+      this.guestLine(ctx),
+    ];
+    lines.push('', 'Sent a holding reply. Worth checking what they last said.');
+    return lines;
+  }
+
+  private tplComposerFallback(ctx: ReasonContext): string[] {
+    const lines: string[] = [
+      "*Fell back to a fixed reply — couldn't compose.*",
+      '',
+      this.guestLine(ctx),
+    ];
+    if (ctx.message) lines.push('', `"${ctx.message}"`);
+    return lines;
+  }
+
+  private tplGeneric(reason: string, ctx: ReasonContext): string[] {
+    const lines: string[] = [
+      `*${this.reasonTitle(reason)}.*`,
+      '',
+      this.guestLine(ctx),
+    ];
+    const facts = this.factLines(ctx);
+    if (facts.length) lines.push('', ...facts);
+    if (ctx.message) lines.push('', `"${ctx.message}"`);
+    return lines;
+  }
+
+  private guestLine(ctx: ReasonContext): string {
+    return ctx.guestName
+      ? `${ctx.guestName} (${ctx.phoneFormatted})`
+      : ctx.phoneFormatted;
+  }
+
+  private factLines(
+    ctx: ReasonContext,
+    opts: { email?: boolean } = {},
+  ): string[] {
+    const lines: string[] = [];
+    if (ctx.datesFormatted) lines.push(`Dates: ${ctx.datesFormatted}`);
+    if (ctx.priceQuoted) {
+      lines.push(
+        `Quote: £${Math.round(ctx.priceQuoted).toLocaleString('en-GB')}`,
+      );
+    }
+    if (opts.email && ctx.email) lines.push(`Email: ${ctx.email}`);
+    return lines;
+  }
+
+  private wantedLine(ctx: ReasonContext): string | null {
+    return ctx.datesFormatted ? `Wanted: ${ctx.datesFormatted}` : null;
+  }
+
+  private subjectFor(
+    reason: string,
+    ctx: ReasonContext,
+    bodyLines: string[],
+  ): string {
+    const leadRaw = bodyLines[0] ?? '';
+    const cleanLead = leadRaw
+      .replace(/\*/g, '')
+      .replace(/🎉/g, '')
+      .trim()
+      .replace(/\.$/, '');
+    const subjectCore = cleanLead || this.reasonTitle(reason);
+    const who = ctx.guestName || ctx.phoneFormatted;
+    return who
+      ? `[Bonté Maison] ${subjectCore} — ${who}`
+      : `[Bonté Maison] ${subjectCore}`;
+  }
+
+  private reasonTitle(reason: string): string {
+    return reason
+      .split('_')
+      .map((w) => (w ? w[0].toUpperCase() + w.slice(1) : w))
+      .join(' ');
+  }
+
+  /**
+   * Render phone as a WhatsApp-clickable string. UK mobiles get human spacing;
+   * everything else just gets a leading `+`.
+   */
+  private formatPhone(phone: string): string {
+    const digits = phone.replace(/[^\d]/g, '');
+    if (digits.startsWith('44') && digits.length === 12) {
+      return `+44 ${digits.slice(2, 6)} ${digits.slice(6)}`;
+    }
+    return `+${digits}`;
+  }
+
+  private parseDatesRequested(
+    raw?: string | null,
+  ): { formatted: string; nightsLabel: string } | undefined {
+    if (!raw) return undefined;
+    const match = raw.match(/(\d{4}-\d{2}-\d{2})[^\d]+(\d{4}-\d{2}-\d{2})/);
+    if (!match) return undefined;
+    const start = new Date(match[1]);
+    const end = new Date(match[2]);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+      return undefined;
+    }
+    const formatted = this.formatDateRange(start, end);
+    const nights = Math.round((end.getTime() - start.getTime()) / DAY_MS);
+    const nightsLabel = `${nights} ${nights === 1 ? 'night' : 'nights'}`;
+    return { formatted, nightsLabel };
+  }
+
+  private formatDateRange(start: Date, end: Date): string {
+    const sameMonth =
+      start.getUTCFullYear() === end.getUTCFullYear() &&
+      start.getUTCMonth() === end.getUTCMonth();
+    const startFmt = sameMonth
+      ? this.formatDayShort(start)
+      : this.formatDayMonth(start);
+    const endFmt = this.formatDayMonthYear(end);
+    return `${startFmt} — ${endFmt}`;
+  }
+
+  private formatDayShort(d: Date): string {
+    return d.toLocaleDateString('en-GB', {
+      weekday: 'short',
+      day: 'numeric',
+      timeZone: 'UTC',
+    });
+  }
+
+  private formatDayMonth(d: Date): string {
+    return d.toLocaleDateString('en-GB', {
+      weekday: 'short',
+      day: 'numeric',
+      month: 'long',
+      timeZone: 'UTC',
+    });
+  }
+
+  private formatDayMonthYear(d: Date): string {
+    // en-GB inserts a comma after the short weekday when the year is present
+    // ("Sun, 18 July 2027"). Strip it for a cleaner read on WhatsApp.
+    return d
+      .toLocaleDateString('en-GB', {
+        weekday: 'short',
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric',
+        timeZone: 'UTC',
+      })
+      .replace(',', '');
   }
 
   private compose(
@@ -239,35 +478,10 @@ export class NotificationsService {
     ctx?: NotificationContext,
   ): { whatsapp: string; subject: string; body: string } {
     const reason = ctx?.reason ?? 'notification';
-
+    const subjectCore = this.reasonTitle(reason);
     const subject = ctx?.from
-      ? `[Bonté Maison] ${reason} — ${ctx.from}`
-      : `[Bonté Maison] ${reason}`;
-
-    const lines: string[] = [text];
-    if (ctx?.from) lines.push(`From: ${ctx.from}`);
-    if (ctx?.intent) lines.push(`Intent: ${ctx.intent}`);
-    if (ctx?.message) lines.push(`Message: ${ctx.message}`);
-    if (ctx?.extra) {
-      for (const [k, v] of Object.entries(ctx.extra)) {
-        lines.push(`${k}: ${this.stringify(v)}`);
-      }
-    }
-
-    return {
-      whatsapp: text,
-      subject,
-      body: lines.join('\n'),
-    };
-  }
-
-  private stringify(v: unknown): string {
-    if (v === null || v === undefined) return '';
-    if (typeof v === 'string') return v;
-    try {
-      return JSON.stringify(v);
-    } catch {
-      return String(v);
-    }
+      ? `[Bonté Maison] ${subjectCore} — ${ctx.from}`
+      : `[Bonté Maison] ${subjectCore}`;
+    return { whatsapp: text, subject, body: text };
   }
 }
