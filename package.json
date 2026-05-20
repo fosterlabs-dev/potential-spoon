@@ -30,7 +30,8 @@
     "test:feedback:jim": "TS_NODE_COMPILER_OPTIONS='{\"module\":\"commonjs\"}' node --env-file=.env -r ts-node/register scripts/run-jim-feedback-test.ts",
     "test:email": "TS_NODE_COMPILER_OPTIONS='{\"module\":\"commonjs\"}' node --env-file=.env -r ts-node/register scripts/send-test-email.ts",
     "test:template": "TS_NODE_COMPILER_OPTIONS='{\"module\":\"commonjs\"}' node --env-file=.env -r ts-node/register scripts/send-test-template.ts",
-    "test:nudges": "TS_NODE_COMPILER_OPTIONS='{\"module\":\"commonjs\"}' node --env-file=.env -r ts-node/register scripts/send-test-nudges.ts"
+    "test:nudges": "TS_NODE_COMPILER_OPTIONS='{\"module\":\"commonjs\"}' node --env-file=.env -r ts-node/register scripts/send-test-nudges.ts",
+    "test:owner-notifications": "TS_NODE_COMPILER_OPTIONS='{\"module\":\"commonjs\"}' node --env-file=.env -r ts-node/register scripts/send-test-owner-notifications.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.90.0",
