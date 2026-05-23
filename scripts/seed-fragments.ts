@@ -52,8 +52,14 @@ const FRAGMENTS: FragmentRow[] = [
   {
     key: 'sleeps',
     category: 'knowledge',
-    text: 'The house comfortably sleeps 10 across five bedrooms. We can also accommodate an 11th guest if it is a child, using a good quality fold-out bed.',
+    text: 'The house comfortably sleeps 10 across five bedrooms and three bathrooms. We can also accommodate an 11th guest if it is a child, using a good quality fold-out bed.',
     topic_keys: ['sleeps'],
+  },
+  {
+    key: 'twin_to_double',
+    category: 'knowledge',
+    text: "On the twin beds, yes we can push them together, but the reality of two separate mattresses means it will always feel like two beds together — many guests are happy with this.",
+    topic_keys: ['twin_to_double'],
   },
   {
     key: 'car_recommended',
@@ -118,7 +124,7 @@ const FRAGMENTS: FragmentRow[] = [
   {
     key: 'property_overview',
     category: 'knowledge',
-    text: 'Bonté is a private luxury villa in the Dordogne, set in peaceful countryside close to Duras, Eymet and Bergerac and well placed for the Bordeaux wine region. It sleeps 10 across five bedrooms (two king-size and three twin), with an additional fold-out bed for an 11th child. The house is reserved exclusively for your group and includes a private pool, two hot tubs, large outdoor dining space, BBQ, pétanque court, fast WiFi, bedding, towels, pool towels, cleaning and a welcome pack on arrival.',
+    text: 'Bonté is a private luxury villa in the Dordogne, set in peaceful countryside close to Duras, Eymet and Bergerac and well placed for the Bordeaux wine region. It sleeps 10 across five bedrooms (two king-size and three twin) and three bathrooms, with an additional fold-out bed for an 11th child. The house is reserved exclusively for your group and includes a private pool, two hot tubs, large outdoor dining space, BBQ, pétanque court, fast WiFi, bedding, towels, pool towels, cleaning and a welcome pack on arrival.',
     topic_keys: ['property_overview'],
   },
   {
