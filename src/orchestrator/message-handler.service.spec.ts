@@ -261,7 +261,7 @@ describe('MessageHandlerService.handle — inbound logging', () => {
     expect(messageLog.log).toHaveBeenCalledWith(
       CUSTOMER,
       'out',
-      'hi, what dates?\n\nwww.bontemaison.com',
+      'hi, what dates?',
     );
   });
 });

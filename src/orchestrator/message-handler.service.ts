@@ -35,7 +35,8 @@ const HISTORY_LIMIT = 10;
 const SEPTEMBER = 8;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const WEBSITE_URL = 'www.bontemaison.com';
-const SCENARIOS_WITH_WEBSITE = new Set(['greeting', 'general_info']);
+const SCENARIOS_WITH_WEBSITE = new Set(['general_info']);
+const SCENARIOS_SKIP_WEBSITE_LINK = new Set(['greeting']);
 
 type IncomingMessage = { from: string; text: string; profileName?: string };
 
@@ -670,9 +671,12 @@ export class MessageHandlerService {
       options,
     );
     const result = await this.composer.compose(pkg);
+    const skipWebsiteLink = SCENARIOS_SKIP_WEBSITE_LINK.has(options.scenario);
 
     if (result.ok) {
-      const finalText = this.ensureWebsiteLink(result.text);
+      const finalText = skipWebsiteLink
+        ? result.text
+        : this.ensureWebsiteLink(result.text);
       await this.whatsapp.sendMessage(from, finalText);
       await this.messageLog.log(from, 'out', finalText);
       await this.markResponded(from);
@@ -689,9 +693,12 @@ export class MessageHandlerService {
       intent: parsed.intent,
       extra: { reason: result.reason, scenario: options.scenario },
     });
-    await this.sendTemplate(from, options.fallbackKey, {
-      name: merged.customerName ?? '',
-    });
+    await this.sendTemplate(
+      from,
+      options.fallbackKey,
+      { name: merged.customerName ?? '' },
+      { appendWebsite: !skipWebsiteLink },
+    );
   }
 
   private async buildCompositionPackage(
@@ -724,10 +731,7 @@ export class MessageHandlerService {
     }
 
     if (SCENARIOS_WITH_WEBSITE.has(options.scenario)) {
-      const websiteText =
-        options.scenario === 'greeting'
-          ? `Mention that most information about the property is on ${WEBSITE_URL}, in one short line before the sign-off.`
-          : `Point the guest to ${WEBSITE_URL} for more detail on the topic they asked about, in a single short sentence (e.g. "More on the website if helpful: ${WEBSITE_URL}").`;
+      const websiteText = `Point the guest to ${WEBSITE_URL} for more detail on the topic they asked about, in a single short sentence (e.g. "More on the website if helpful: ${WEBSITE_URL}").`;
       facts.push({ key: 'website', text: websiteText });
     }
 
@@ -999,11 +1003,14 @@ export class MessageHandlerService {
     to: string,
     key: string,
     vars: TemplateVars,
-    options: { override?: boolean } = {},
+    options: { override?: boolean; appendWebsite?: boolean } = {},
   ): Promise<void> {
     const rendered = await this.templates.render(key, vars);
-    const text = this.ensureWebsiteLink(rendered);
-    await this.whatsapp.sendMessage(to, text, options);
+    const text =
+      options.appendWebsite === false
+        ? rendered
+        : this.ensureWebsiteLink(rendered);
+    await this.whatsapp.sendMessage(to, text, { override: options.override });
     await this.messageLog.log(to, 'out', text);
     await this.markResponded(to);
   }
@@ -1246,6 +1253,8 @@ export class MessageHandlerService {
 
   private scenarioGuidance(scenario: string): string | null {
     switch (scenario) {
+      case 'greeting':
+        return "The customer has just said hello, with no question yet. Reply warmly: a brief 'Hi, lovely to hear from you' style opener is fine (greetings are allowed on first messages), introduce yourself as Jim from Bonté Maison, then ask what dates they were thinking. Two or three short sentences total. Do NOT mention or link the website here — they haven't asked anything to point them at yet.";
       case 'acknowledgment':
         return "The customer just said something like 'thanks' or 'thank you' to close the loop. Reply warmly with a 'you're welcome' style line — for example 'You're welcome, just shout if anything else comes up.' or 'My pleasure — happy to help any time.' Do NOT open with 'Perfect' / 'Great' / 'Got it'. Do NOT promise future contact like 'You'll hear from me soon' unless a fact says so. One short sentence is enough.";
       case 'polite_close':
